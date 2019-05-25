@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.00)
 project(StateEstimator)
-
+set(2D_PROJECT ${CMAKE_PROJECT_NAME}_2d)
+set(3D_PROJECT ${CMAKE_PROJECT_NAME}_3d)
 set(BUILD_FLAGS "-std=c++11 -Wuninitialized -Wall -Wextra")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${BUILD_FLAGS}")
 
@@ -12,7 +13,6 @@ list(APPEND NEEDED_LIBRARIES ${Boost_FILESYSTEM_LIBRARY} ${Boost_SYSTEM_LIBRARY}
 find_package(Eigen3 REQUIRED)
 # add_subdirectory(cmake)
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-#find_package(cmake_modules REQUIRED)
 
 find_package(TBB COMPONENTS tbb tbbmalloc)
 if(TBB_FOUND)
@@ -22,8 +22,13 @@ endif()
 find_package(GTSAM)
 if(GTSAM_FOUND)
     include_directories("/usr/include/eigen3" "/usr/local/include")
-    add_executable(${CMAKE_PROJECT_NAME} LocalizationTest.cpp)
-    target_link_libraries(${CMAKE_PROJECT_NAME} /usr/local/lib/libgtsam.so)
-    target_link_libraries(${CMAKE_PROJECT_NAME} ${NEEDED_LIBRARIES})
+    add_executable(${2D_PROJECT} LocalizationTest.cpp)
+    target_link_libraries(${2D_PROJECT} /usr/local/lib/libgtsam.so)
+    target_link_libraries(${2D_PROJECT} ${NEEDED_LIBRARIES})
+
+    add_executable(${3D_PROJECT} Imu3dTest.cpp)
+    target_link_libraries(${3D_PROJECT} /usr/local/lib/libgtsam.so)
+    target_link_libraries(${3D_PROJECT} ${NEEDED_LIBRARIES})
+
 endif()
 
