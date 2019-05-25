@@ -17,9 +17,9 @@ public:
 	~FactorGraphEstimator() = default;
 
   // Define methods here
-  virtual void callback_cm(imagestuff);
+  virtual void callback_cm(std::map<int l_id, std::pair<double, double>> landmark_data);
   virtual void callback_range(rangestuff); // TODO: Implement this shit
-  virtual void callback_imu(imustuff);
+  virtual void callback_imu(IMU_readings imu_data);
 private:
 	// Declare variables here and also add_imu
 	virtual void run_optimimize();
