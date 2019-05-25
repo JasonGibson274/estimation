@@ -27,6 +27,8 @@
 // We will use Pose2 variables (x, y, theta) to represent the robot positions
 #include <gtsam/geometry/Pose2.h>
 
+#include <gtsam/geometry/Pose3.h>
+
 // We will use simple integer Keys to refer to the robot poses.
 #include <gtsam/inference/Key.h>
 
@@ -42,6 +44,10 @@
 // to a consistent set of variable values. This requires us to specify an initial guess
 // for each variable, held in a Values container.
 #include <gtsam/nonlinear/Values.h>
+
+// We want to use iSAM2 to solve the structure-from-motion problem
+// incrementally, so include iSAM2 here
+#include <gtsam/nonlinear/ISAM2.h>
 
 // Finally, once all of the factors have been added to our factor graph, we will want to
 // solve/optimize to graph to find the best (Maximum A Posteriori) set of variable values.
@@ -112,10 +118,17 @@ public:
 }; // UnaryFactor
 #include <map>
 #include <random>
+#include <chrono>
+typedef std::chrono::high_resolution_clock Clock;
+typedef std::chrono::milliseconds milliseconds;
 // Create graph and state structures
 NonlinearFactorGraph graph;
 int t = 0;
 vector<Pose2> state_estimates;
+vector<Pose3> landmarks;
+vector<Point2> camera_measurements;
+// Values initialStateEstimate;
+ISAM2 isam;
 vector<double> true_state_(3, 0); // Initialize state at origin
 map<pair<double, double>, vector<int>> previous_states;
 
@@ -123,6 +136,7 @@ map<pair<double, double>, vector<int>> previous_states;
 // Recalculates the most likely states for all t and prints it out
 void step_graph(Pose2 action, std::vector<double> obs, Pose2 estimate_t) {
   // Motion Model Update
+  auto start_time = Clock::now();
   noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.1));
   graph.emplace_shared<BetweenFactor<Pose2> >(t, t+1, action, odometryNoise);
   t++;
@@ -130,7 +144,7 @@ void step_graph(Pose2 action, std::vector<double> obs, Pose2 estimate_t) {
   // Sensor Update
   noiseModel::Diagonal::shared_ptr unaryNoise = noiseModel::Diagonal::Sigmas(Vector2(0.1, 0.1)); // 10cm std on x,y
   graph.emplace_shared<UnaryFactor>(t, obs[0], obs[1], unaryNoise);
-
+  cout << "Added factors at this state" << endl;
   // Check for Loop Closures
   auto it_ = previous_states.find(std::make_pair(true_state_[0], true_state_[1]));
   if (it_ == previous_states.end()) {
@@ -148,24 +162,42 @@ void step_graph(Pose2 action, std::vector<double> obs, Pose2 estimate_t) {
   // Update state estimates for all time
   Values initialStateEstimate;
   state_estimates.push_back(estimate_t);
-  for (size_t i = 0; i < state_estimates.size(); i++) {
-    initialStateEstimate.insert(i, state_estimates[i]);
+  initialStateEstimate.insert(t, state_estimates[t]);
+  if (t == 1) {
+    initialStateEstimate.insert(0, state_estimates[0]);
   }
-
+  // for (size_t i = 0; i < state_estimates.size(); i++) {
+  //   initialStateEstimate.insert(i, state_estimates[i]);
+  // }
   // Optimize
-  LevenbergMarquardtOptimizer optimizer(graph, initialStateEstimate);
-  Values result = optimizer.optimize();
-  result.print("Final Result:\n");
-  // TODO: Update state estimate with values from result
 
-  Marginals marginals(graph, result);
-  cout << "Latest state covariance:\n" << marginals.marginalCovariance(t) << endl;
+  // LevenbergMarquardtOptimizer optimizer(graph, initialStateEstimate);
+  // Values result = optimizer.optimize();
+  // result.print("Final Result:\n");
+
+  isam.update(graph, initialStateEstimate);
+  isam.update();
+  Values result = isam.calculateEstimate();
+  auto end_time = Clock::now();
+  auto calc_time = std::chrono::duration_cast<milliseconds>(end_time - start_time);
+  result.print("Final Result after optimazation:\n");
+  // TODO: Update state estimate with values from result
+  cout << "Took " << calc_time.count() << " ms" << endl;
+  graph = NonlinearFactorGraph();
+  // Marginals marginals(graph, result);
+
+  // cout << "Latest state covariance:\n" << marginals.marginalCovariance(t) << endl;
 
 }
 
 int main(int argc, char** argv) {
   // // 2b. Add "GPS-like" measurements
   // // We will use our custom UnaryFactor for this.
+
+  ISAM2Params parameters;
+  parameters.relinearizeThreshold = 0.01;
+  parameters.relinearizeSkip = 1;
+  isam = ISAM2(parameters);
   noiseModel::Diagonal::shared_ptr unaryNoise = noiseModel::Diagonal::Sigmas(Vector2(0.1, 0.1)); // 10cm std on x,y
 
   // Give iniitial observation as perfect reading of the true_state
