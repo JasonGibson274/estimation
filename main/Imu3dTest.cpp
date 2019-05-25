@@ -212,9 +212,9 @@ int main(int argc, char** argv) {
         estimated_velocity_[i] += noisy_action[i] * dt;
       }
       std::cout << "Noisy Action: x = " << noisy_action[0] << ", y = " << noisy_action[1] << ", theta = " << noisy_action[2] << std::endl;
-
+      // This integration needs to be done at every IMU "reading"
       imu_preintegrated.integrateMeasurement(Vector3(noisy_action[0], noisy_action[1], noisy_action[2]), Vector3(0,0,0), dt);
-
+      // This IMU factor can be added at Camera Hz
       ImuFactor imu_factor(X(t-1), V(t-1),
                            X(t  ), V(t  ),
                            B(0),
@@ -224,8 +224,9 @@ int main(int argc, char** argv) {
 
       initial_estimate.insert(X(t), Pose3(Rot3(), Point3(estimated_position_[0], estimated_position_[1], estimated_position_[2])));
       initial_estimate.insert(V(t), Vector3(estimated_velocity_[0], estimated_velocity_[1], estimated_velocity_[2]));
-
-      isam.update(graph, initial_estimate);
+      isam_graph = graph.clone();
+      graph.clear();
+      isam.update(isam_graph, initial_estimate);
       Values result = isam.calculateEstimate();
       graph = NonlinearFactorGraph();
       initial_estimate.clear();

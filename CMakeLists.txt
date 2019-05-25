@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.00)
 project(StateEstimator)
-set(2D_PROJECT ${CMAKE_PROJECT_NAME}_2d)
-set(3D_PROJECT ${CMAKE_PROJECT_NAME}_3d)
+
 set(BUILD_FLAGS "-std=c++11 -Wuninitialized -Wall -Wextra")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${BUILD_FLAGS}")
 
@@ -21,15 +20,21 @@ if(TBB_FOUND)
 	list(APPEND NEEDED_LIBRARIES tbb tbbmalloc)
 endif()
 
-find_package(GTSAM)
-if(GTSAM_FOUND)
-    include_directories(${GTSAM_INCLUDE_DIR})
-    add_executable(${2D_PROJECT} LocalizationTest.cpp)
-    target_link_libraries(${2D_PROJECT} /usr/local/lib/libgtsam.so)
-    target_link_libraries(${2D_PROJECT} ${NEEDED_LIBRARIES})
 
-    add_executable(${3D_PROJECT} Imu3dTest.cpp)
-    target_link_libraries(${3D_PROJECT} /usr/local/lib/libgtsam.so)
-    target_link_libraries(${3D_PROJECT} ${NEEDED_LIBRARIES})
-endif()
 
+# Add our source code
+add_subdirectory(main)
+add_subdirectory(src)
+
+# Find GTSAM
+find_package(GTSAM REQUIRED)
+include_directories(${GTSAM_INCLUDE_DIR})
+set(GTSAM_LIBRARIES "/usr/local/lib/libgtsam.so")
+
+
+# Install all library headers
+install(
+  DIRECTORY include/${PROJECT_NAME}
+  DESTINATION include
+  FILES_MATCHING PATTERN "*.h"
+  )
