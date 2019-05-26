@@ -224,8 +224,8 @@ int main(int argc, char** argv) {
 
       initial_estimate.insert(X(t), Pose3(Rot3(), Point3(estimated_position_[0], estimated_position_[1], estimated_position_[2])));
       initial_estimate.insert(V(t), Vector3(estimated_velocity_[0], estimated_velocity_[1], estimated_velocity_[2]));
-      isam_graph = graph.clone();
-      graph.clear();
+      NonlinearFactorGraph isam_graph = graph.clone();
+      // graph.clear();
       isam.update(isam_graph, initial_estimate);
       Values result = isam.calculateEstimate();
       graph = NonlinearFactorGraph();

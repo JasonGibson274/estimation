@@ -1,15 +1,19 @@
-#include <alphapilot_estimation/FactorGraph/FactorGraphEstimator.h>
+#include <alphapilot/estimation/FactorGraph/FactorGraphEstimator.h>
+#include <gtsam/inference/Symbol.h>
 #include <gtsam/slam/BetweenFactor.h>
 
 using namespace std;
 using namespace gtsam;
 
-namespace alphapilot_estimator {
+const double kGravity = 9.81;
+
+namespace alphapilot {
+namespace estimator {
   /**
    * Constructor for the Factor Graph Estimator;
    */
   FactorGraphEstimator::FactorGraphEstimator() {
-    current_incremental_graph_ = new NonLinearFactorGraph();
+    current_incremental_graph_ = make_shared<NonlinearFactorGraph>();
     // Construct parameters for preintegration
     auto params = PreintegrationParams::MakeSharedU(kGravity);
     params->setAccelerometerCovariance(I_3x3 * 0.1);
@@ -17,32 +21,32 @@ namespace alphapilot_estimator {
     params->setIntegrationCovariance(I_3x3 * 0.1);
     params->setUse2ndOrderCoriolis(false);
     params->setOmegaCoriolis(Vector3(0, 0, 0));
-    preintegrator_imu_ = new PreintegratedImuMeasurements(params);
+    preintegrator_imu_ = PreintegratedImuMeasurements(params);
 
     // Add initial bias and state to graph
     bias_index_ = Symbol('b', index);
-    current_position_guess_ = new Pose3(Rot3(), Point3(0, 0, 0));
-    current_velocity_guess_ = new Vector(3, 0, 0, 0);
-    current_bias_guess_ = new imuBias::ConstantBias();
-    gtsam_current_state_initial_guess->insert(symbol_shorthand::X(index),
+    current_position_guess_ = make_shared<Pose3>(Rot3(), Point3(0, 0, 0));
+    current_velocity_guess_ = make_shared<Vector3>(0, 0, 0);
+    current_bias_guess_ = make_shared<imuBias::ConstantBias>();
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index),
                                               *current_position_guess_);
-    gtsam_current_state_initial_guess->insert(symbol_shorthand::V(index),
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index),
                                               *current_velocity_guess_);
-    gtsam_current_state_initial_guess->insert(bias_index_,
+    gtsam_current_state_initial_guess_->insert(bias_index_,
                                               *current_bias_guess_);
 
 
     // Construct parameters for ISAM optimizer
-    ISAM2Params parameters;
-    parameters.relinearizeThreshold = 0.01;
-    parameters.relinearizeSkip = 1;
-    parameters.cacheLinearizedFactors = false;
-    parameters.enableDetailedResults = true;
-    parameters.print();
-    isam_ = new ISAM2(isam_parameters);
+    ISAM2Params isam_parameters;
+    isam_parameters.relinearizeThreshold = 0.01;
+    isam_parameters.relinearizeSkip = 1;
+    isam_parameters.cacheLinearizedFactors = false;
+    isam_parameters.enableDetailedResults = true;
+    isam_parameters.print();
+    isam_ = make_shared<ISAM2>(isam_parameters);
 
     // Initialze K
-    K_ = new Cal3_S2(50.0, 50.0, 0.0, 50.0, 50.0);
+    K_ = Cal3_S2(50.0, 50.0, 0.0, 50.0, 50.0);
 
     // Initialize Noise Models
     cam_measurement_noise_ =
@@ -67,18 +71,23 @@ namespace alphapilot_estimator {
 
     // Update bias at a slower rate
     if (index % 5 == 0) {
-      *bias_index_++;
-      Symbol b1 = *bias_index_ - 1;
-      Symbol b2 = *bias_index_;
+      bias_index_++;
+      Symbol b1 = bias_index_ - 1;
+      Symbol b2 = bias_index_;
+
+      Vector6 covvec;
+      covvec << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
+      auto bias_noise_ = noiseModel::Diagonal::Variances(covvec);
 
       // Motion model of bias - currently constant bias is assumed
-      auto f = make_shared<BetweenFactor<imuBias::ConstantBias> >(
-          b1, b2, imuBias::ConstantBias(), bias_noise_);
 
       // Add factor to graph and add initial variable guesses
       lock_guard<mutex> lck(graph_lck_);
-      current_incremental_graph_->add(f);
-      initialEstimate->insert(*bias_index_, *current_bias_guess_);
+      current_incremental_graph_->emplace_shared<BetweenFactor<
+          imuBias::ConstantBias>>(b1, b2, imuBias::ConstantBias(),
+                                  bias_noise_);
+      gtsam_current_state_initial_guess_->insert(bias_index_,
+                                                 *current_bias_guess_);
     }
 
     // motion model of position and velocity variables
@@ -86,13 +95,13 @@ namespace alphapilot_estimator {
                      symbol_shorthand::V(index - 1),
                      symbol_shorthand::X(index),
                      symbol_shorthand::V(index),
-                     *bias_index_,
-                     *preintegrator_imu_);
+                     bias_index_,
+                     preintegrator_imu_);
     // Add factor to graph and add initial variable guesses
     lock_guard<mutex> lck(graph_lck_);
-    gtsam_current_state_initial_guess->insert(symbol_shorthand::X(index),
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index),
                                               *current_position_guess_);
-    gtsam_current_state_initial_guess->insert(symbol_shorthand::V(index),
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index),
                                               *current_velocity_guess_);
     current_incremental_graph_->add(imufac);
   }
@@ -117,8 +126,9 @@ namespace alphapilot_estimator {
       auto landmark_factor_it = landmark_factors_.find(l_id);
       // New Landmark - Add a new Factor
       if (landmark_factor_it == landmark_factors_.end()) {
+        Cal3_S2::shared_ptr K(new Cal3_S2(50.0, 50.0, 0.0, 50.0, 50.0));
         landmark_factors_[l_id] =
-          new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K_);
+          new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K);
       }
       // Translate detection into gtsam
       Point2 detection_coords(im_coords.first, im_coords.second);
@@ -134,4 +144,5 @@ namespace alphapilot_estimator {
       run_optimize();
     }
   }
-}
+} // estimator
+} // alphapilot
