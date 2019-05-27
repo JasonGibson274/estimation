@@ -160,7 +160,15 @@ namespace estimator {
   }
 
   void FactorGraphEstimator::callback_imu(IMU_readings imu_data) {
-    // integrate the imu reading
+    // integrate the imu reading using affine dynamics from TODO cite
+    // updates the current guesses of position
+    Vector3 accel = Vector3 (imu_data.x_accel, imu_data.y_accel, imu_data.z_accel);
+    // TODO check order
+    Vector3 ang_rate = Vector3 (imu_data.roll_vel, imu_data.pitch_vel, imu_data.yaw_vel);
+    preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data.dt);
+
+    // integrate the IMU to get an updated estimate of the current position
+    propagate_imu(current_pose_estimate_, accel, ang_rate, imu_data.dt);
   }
 
   /**
@@ -170,6 +178,96 @@ namespace estimator {
    */
   void FactorGraphEstimator::run_optimize() {
     // run the optimization and output the final state
+    lock_guard<mutex> graph_lck(graph_lck_);
+    lock_guard<mutex> preintegration_lck(preintegrator_lck_);
+
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index), *current_position_guess_);
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index), *current_velocity_guess_);
+    // TODO is bias guess being updated?
+    //gtsam_current_state_initial_guess_->insert(symbol_shorthand::B(index), current_bias_guess_);
+
+    // create copy of the graph just in case
+    NonlinearFactorGraph isam_graph = current_incremental_graph_->clone();
+    // run update and run optimization
+    isam_->update(isam_graph, *gtsam_current_state_initial_guess_);
+    // set the guesses of state to the correct output
+    current_position_guess_ = make_shared<Pose3>(isam_->calculateEstimate<Pose3>(symbol_shorthand::X(index)));
+    current_velocity_guess_ = make_shared<Vector3>(isam_->calculateEstimate<Vector3>(symbol_shorthand::V(index)));
+    current_bias_guess_ = make_shared<imuBias::ConstantBias>(isam_->calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(index)));
+
+    // set the result to best guess
+    current_pose_estimate_.x = current_position_guess_->x();
+    current_pose_estimate_.y = current_position_guess_->y();
+    current_pose_estimate_.z = current_position_guess_->z();
+
+    current_pose_estimate_.roll = current_position_guess_->rotation().rpy()[0];
+    current_pose_estimate_.pitch = current_position_guess_->rotation().rpy()[1];
+    current_pose_estimate_.yaw = current_position_guess_->rotation().rpy()[2];
+
+    current_pose_estimate_.x_dot = (*current_velocity_guess_)[0];
+    current_pose_estimate_.y_dot = (*current_velocity_guess_)[1];
+    current_pose_estimate_.z_dot = (*current_velocity_guess_)[2];
+
+    // clear incremental graph and current guesses
+    current_incremental_graph_ = make_shared<NonlinearFactorGraph>();
+    gtsam_current_state_initial_guess_->clear();
+
+  }
+
+  /**
+   * Propagates the state according to the (stochastic) rigid body dynamics equations
+   * Modifies class members
+   * @param acc linear acceleration in body frame
+   * @param angular_vel in body frame
+   * @param dt time difference
+   */
+   // TODO clean up method
+  void FactorGraphEstimator::propagate_imu(drone_state current_state, Vector3 acc, Vector3 angular_vel, double dt) {
+    drone_state result;
+
+    //Position updates
+    result.x = current_state.x + current_state.x_dot*dt;
+    result.y = current_state.y + current_state.y_dot*dt;
+    result.z = current_state.z + current_state.z_dot*dt;
+
+    //Update velocity
+    float c_phi, c_theta, c_psi, s_phi, s_theta, s_psi;
+    float ux, uy, uz;
+    c_phi = cosf(current_state.roll);
+    c_theta = cosf(current_state.pitch);
+    c_psi = cosf(current_state.yaw);
+    s_phi = sinf(current_state.roll);
+    s_theta = sinf(current_state.pitch);
+    s_psi = sinf(current_state.yaw);
+    ux = acc[0]*dt;
+    uy = acc[1]*dt;
+    uz = acc[2]*dt;
+    result.x_dot = current_state.x_dot + (c_theta*c_psi)*ux + (s_phi*s_theta*c_psi - c_phi*s_psi)*uy + (c_phi*s_theta*c_psi + s_phi*s_psi)*uz;
+    result.y_dot = current_state.y_dot + (c_theta*s_psi)*ux + (s_phi*s_theta*s_psi + c_phi*c_psi)*uy + (c_phi*s_theta*s_psi - s_phi*c_psi)*uz;
+    result.z_dot = current_state.z_dot + (-s_theta)*ux + (c_theta*s_phi)*uy + (c_theta*c_phi)*uz - 9.81*dt;
+
+    //Update the euler angles
+    float r, p, y;
+    r = current_state.roll + (current_state.roll_dot + (s_phi*s_theta/c_theta)*current_state.pitch_dot + (c_phi*s_theta/c_theta)*current_state.yaw_dot)*dt;
+    p = current_state.pitch + (c_phi*current_state.pitch_dot - s_phi*current_state.yaw_dot)*dt;
+    y = current_state.yaw + (s_phi/c_theta*current_state.pitch_dot + c_phi/c_theta*current_state.yaw_dot)*dt;
+    result.roll = r;
+    result.pitch = p;
+    result.yaw = y;
+
+    //Update angular rate
+    result.roll_dot = angular_vel[0];
+    result.pitch_dot = angular_vel[1];
+    result.pitch_dot = angular_vel[2];
+
+    // apply the update
+    // the ordering is correct for gtsam
+    Pose3 pose_result = Pose3(Rot3::Ypr(result.yaw, result.pitch, result.roll),
+            Point3(result.x, result.y, result.z));
+    *current_position_guess_ = *current_position_guess_ * pose_result;
+    Vector3 vel_result = Vector3(result.x_dot, result.y_dot, result.z_dot);
+    *current_velocity_guess_ = *current_velocity_guess_ + vel_result;
+
   }
 } // estimator
 } // alphapilot

@@ -17,11 +17,11 @@ public:
    * @return
    */
     virtual alphapilot::drone_state latest_state() {
-        return current_pose_estimate;
+        return current_pose_estimate_;
     }
 
-private:
-    alphapilot::drone_state current_pose_estimate;
+protected:
+    alphapilot::drone_state current_pose_estimate_;
 
 };
 

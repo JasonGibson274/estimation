@@ -19,6 +19,8 @@ Authors: Bogdan Vlahov and Jason Gibson
 
 #include <alphapilot/estimation/Estimator.h>
 
+
+// TODO make callbacks pass by const reference to shared pointer
 namespace alphapilot {
 namespace estimator {
 class FactorGraphEstimator : Estimator {
@@ -34,6 +36,7 @@ private:
 	// Declare variables here and also add_imu
 	virtual void run_optimize();
 	virtual void add_imu_factor();
+  void propagate_imu(drone_state current_state, gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
 	std::shared_ptr<gtsam::Values> gtsam_current_state_initial_guess_;
 
 	// Updated in callback_imu
