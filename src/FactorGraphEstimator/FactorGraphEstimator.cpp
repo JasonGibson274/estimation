@@ -144,5 +144,15 @@ namespace estimator {
       run_optimize();
     }
   }
+
+    void FactorGraphEstimator::callback_imu(IMU_readings imu_data) {
+      // integrate the imu reading
+
+    }
+
+    void FactorGraphEstimator::run_optimize() {
+      // run the optimization and output the final state
+
+    }
 } // estimator
 } // alphapilot

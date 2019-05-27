@@ -17,12 +17,13 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <mutex>
 #include <memory>
 
+#include <alphapilot/estimation/Estimator.h>
+
 namespace alphapilot {
 namespace estimator {
-class FactorGraphEstimator {
+class FactorGraphEstimator : Estimator {
 public:
 	FactorGraphEstimator();
-	~FactorGraphEstimator() = default;
 
   virtual void callback_cm(std::map<int, std::pair<double, double>> landmark_data);
   // TODO: Figure out what data structure is used for range finders
@@ -32,7 +33,6 @@ public:
    * drone state for other code to use
    * @return
    */
-  virtual drone_state lastest_state();
 private:
 	// Declare variables here and also add_imu
 	virtual void run_optimize();
