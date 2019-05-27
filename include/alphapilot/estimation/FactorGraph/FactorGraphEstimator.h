@@ -25,14 +25,11 @@ class FactorGraphEstimator : Estimator {
 public:
 	FactorGraphEstimator();
 
-  virtual void callback_cm(std::map<int, std::pair<double, double>> landmark_data);
+  virtual void callback_cm(const std::map<int, std::pair<double, double>> landmark_data);
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(int rangestuff);
   virtual void callback_imu(IMU_readings imu_data);
-  /** Takes the latest state estimation from gtsam and returns it as a
-   * drone state for other code to use
-   * @return
-   */
+
 private:
 	// Declare variables here and also add_imu
 	virtual void run_optimize();

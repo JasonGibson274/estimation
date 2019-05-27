@@ -12,7 +12,10 @@ class Estimator {
 public:
     Estimator() = default;
     ~Estimator() = default;
-
+    /** Takes the latest state estimation from gtsam and returns it as a
+   * drone state for other code to use
+   * @return
+   */
     virtual alphapilot::drone_state latest_state() {
         return current_pose_estimate;
     }

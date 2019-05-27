@@ -35,6 +35,17 @@ namespace estimator {
     gtsam_current_state_initial_guess_->insert(bias_index_,
                                               *current_bias_guess_);
 
+    // create priors on the state
+
+    // Assemble prior noise model and add it the graph.
+    noiseModel::Diagonal::shared_ptr pose_noise_model = noiseModel::Diagonal::Sigmas((Vector(6)
+            << 0.01, 0.01, 0.01, 0.5, 0.5, 0.5).finished()); // rad,rad,rad,m, m, m
+    noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3,0.1); // m/s
+    noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Isotropic::Sigma(6,1e-3);
+
+    current_incremental_graph_->add(PriorFactor<Pose3>(symbol_shorthand::X(index), *current_position_guess_, pose_noise_model));
+    current_incremental_graph_->add(PriorFactor<Vector3>(symbol_shorthand::V(index), *current_velocity_guess_, velocity_noise_model));
+    current_incremental_graph_->add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(index), *current_bias_guess_, bias_noise_model));
 
     // Construct parameters for ISAM optimizer
     ISAM2Params isam_parameters;
@@ -75,10 +86,6 @@ namespace estimator {
       Symbol b1 = bias_index_ - 1;
       Symbol b2 = bias_index_;
 
-      Vector6 covvec;
-      covvec << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
-      auto bias_noise_ = noiseModel::Diagonal::Variances(covvec);
-
       // Motion model of bias - currently constant bias is assumed
 
       // Add factor to graph and add initial variable guesses
@@ -90,6 +97,7 @@ namespace estimator {
                                                  *current_bias_guess_);
     }
 
+    preintegrator_lck_.lock();
     // motion model of position and velocity variables
     ImuFactor imufac(symbol_shorthand::X(index - 1),
                      symbol_shorthand::V(index - 1),
@@ -97,12 +105,18 @@ namespace estimator {
                      symbol_shorthand::V(index),
                      bias_index_,
                      preintegrator_imu_);
+
+    // clear IMU rolling integration
+    preintegrator_imu_.resetIntegration();
+
     // Add factor to graph and add initial variable guesses
     lock_guard<mutex> lck(graph_lck_);
     gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index),
                                               *current_position_guess_);
     gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index),
                                               *current_velocity_guess_);
+    // prevents current_vel and pos from being updated
+    preintegrator_lck_.unlock();
     current_incremental_graph_->add(imufac);
   }
 
@@ -118,7 +132,7 @@ namespace estimator {
    *
    * @param map<landmark_id, uv_coords> landmark_data
    */
-  void FactorGraphEstimator::callback_cm(map<int, pair<double, double>>
+  void FactorGraphEstimator::callback_cm(const map<int, pair<double, double>>
                                          landmark_data) {
     for (auto seen_landmark : landmark_data) {
       int l_id = seen_landmark.first;
@@ -126,6 +140,7 @@ namespace estimator {
       auto landmark_factor_it = landmark_factors_.find(l_id);
       // New Landmark - Add a new Factor
       if (landmark_factor_it == landmark_factors_.end()) {
+        // TODO magic number
         Cal3_S2::shared_ptr K(new Cal3_S2(50.0, 50.0, 0.0, 50.0, 50.0));
         landmark_factors_[l_id] =
           new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K);
@@ -140,19 +155,21 @@ namespace estimator {
                                    symbol_shorthand::X(index));
       graph_lck_.unlock();
 
-
       run_optimize();
     }
   }
 
-    void FactorGraphEstimator::callback_imu(IMU_readings imu_data) {
-      // integrate the imu reading
+  void FactorGraphEstimator::callback_imu(IMU_readings imu_data) {
+    // integrate the imu reading
+  }
 
-    }
-
-    void FactorGraphEstimator::run_optimize() {
-      // run the optimization and output the final state
-
-    }
+  /**
+   * Adds the local factor graph that was constructed during the most recent
+   * callbacks, then clears the graph for the next iteration.
+   * This optimizes the entire state trajectory
+   */
+  void FactorGraphEstimator::run_optimize() {
+    // run the optimization and output the final state
+  }
 } // estimator
 } // alphapilot
