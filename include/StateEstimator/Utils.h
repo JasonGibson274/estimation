@@ -27,5 +27,5 @@ struct drone_state
   double pitch_dot = 0;
   double yaw_dot = 0;
 };
-} // alphapilot
+} // StateEstimator
 #endif // UTILS_MSGS_H_

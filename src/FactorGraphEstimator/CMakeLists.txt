@@ -7,6 +7,7 @@ SET (LIB_MINOR 0)
 SET (LIB_RELEASE 1)
 
 file(GLOB SRCS *.cpp)
+message( ${STATE_ESTIMATOR_INCLUDE} )
 
 #FOR Debugging:
 #TODO: comment out before committing.
@@ -15,7 +16,7 @@ add_definitions (
 )
 
 ADD_LIBRARY(${LIBRARY_NAME} SHARED
-  ${SRCS}
+  ${SRCS} ${STATE_ESTIMATOR_INCLUDE}
   )
 
 TARGET_LINK_LIBRARIES(${LIBRARY_NAME}
@@ -28,7 +29,7 @@ set_target_properties(${LIBRARY_NAME} PROPERTIES
   SOVERSION ${LIB_MAJOR}
   VERSION ${_soversion}
   LIBRARY_OUTPUT_DIRECTORY ${PROJECT_LIBS_DIR}
-  )
+)
 
 install(TARGETS ${LIBRARY_NAME}
   # IMPORTANT: Add the library to the "export-set"

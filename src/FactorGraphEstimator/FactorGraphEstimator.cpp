@@ -1,4 +1,4 @@
-#include <alphapilot/estimation/FactorGraph/FactorGraphEstimator.h>
+#include <StateEstimator/estimation/FactorGraph/FactorGraphEstimator.h>
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/slam/BetweenFactor.h>
 
@@ -269,5 +269,9 @@ namespace estimator {
     *current_velocity_guess_ = *current_velocity_guess_ + vel_result;
 
   }
+
+  void FactorGraphEstimator::callback_range(int rangestuff) {
+
+  }
 } // estimator
-} // alphapilot
+} // StateEstimator

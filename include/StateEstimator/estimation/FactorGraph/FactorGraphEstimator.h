@@ -11,13 +11,13 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
 
-#include <alphapilot/Utils.h>
+#include <StateEstimator/Utils.h>
 
 #include <map>
 #include <mutex>
 #include <memory>
 
-#include <alphapilot/estimation/Estimator.h>
+#include <StateEstimator/estimation/Estimator.h>
 
 
 // TODO make callbacks pass by const reference to shared pointer
@@ -57,5 +57,5 @@ private:
 	gtsam::noiseModel::Diagonal::shared_ptr bias_noise_;
 };
 } // estimator
-} // alphapilot
+} // StateEstimator
 #endif // FactorGraphEstimator_H_

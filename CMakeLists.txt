@@ -56,4 +56,34 @@ install(
   FILES_MATCHING PATTERN "*.h"
   )
 
+# ======== interesting stuff =======
+# Make relative paths absolute (needed later on)
+#foreach(p LIB BIN INCLUDE CMAKE)
+#    set(var INSTALL_${p}_DIR)
+#    if(NOT IS_ABSOLUTE "${${var}}")
+#        set(${var} "${CMAKE_INSTALL_PREFIX}/${${var}}")
+#    endif()
+#endforeach()
+
+# Export the package for use from the build-tree
+# (this registers the build-tree with a global CMake-registry)
+#export(PACKAGE StateEstimator)
+
+# Create the StateEstimator.cmake and StateEstimatorConfigVersion files
+#file(RELATIVE_PATH REL_INCLUDE_DIR "${INSTALL_CMAKE_DIR}"
+#        "${INSTALL_INCLUDE_DIR}")
+# ... for the build tree
+#set(CONF_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}" "${PROJECT_BINARY_DIR}")
+#configure_file(StateEstimatorConfig.cmake.in
+#        "${PROJECT_BINARY_DIR}/StateEstimatorConfig.cmake" @ONLY)
+# ... for the install tree
+#set(CONF_INCLUDE_DIRS "\${FOOBAR_CMAKE_DIR}/${REL_INCLUDE_DIR}")
+#configure_file(StateEstimatorConfig.cmake.in
+#        "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/StateEstimatorConfig.cmake" @ONLY)
+# Install the StateEstimatorConfig.cmake
+#install(FILES
+#        "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/StateEstimatorConfig.cmake"
+#        DESTINATION "${INSTALL_CMAKE_DIR}" COMPONENT dev)
+
+
 # TODO: build and install all libraries/executables
