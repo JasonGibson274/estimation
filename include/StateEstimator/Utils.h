@@ -12,6 +12,21 @@ struct IMU_readings
   double dt = 0;
 };
 
+struct drone_covariance {
+  double x = 0;
+  double y = 0;
+  double z = 0;
+  double roll = 0;
+  double pitch = 0;
+  double yaw = 0;
+  double x_dot = 0;
+  double y_dot = 0;
+  double z_dot = 0;
+  double roll_dot = 0;
+  double pitch_dot = 0;
+  double yaw_dot = 0;
+};
+
 struct drone_state
 {
   double x = 0;
@@ -26,6 +41,17 @@ struct drone_state
   double roll_dot = 0;
   double pitch_dot = 0;
   double yaw_dot = 0;
+  // seconds
+  double time = 0;
+  drone_covariance covariance;
+};
+
+struct camera_info {
+ double fx = 0;
+ double fy = 0;
+ double s = 0;
+ double u0 = 0;
+ double v0 = 0;
 };
 } // StateEstimator
 #endif // UTILS_MSGS_H_

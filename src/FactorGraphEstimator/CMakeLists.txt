@@ -39,3 +39,8 @@ install(TARGETS ${LIBRARY_NAME}
 
 # Push up the PROJECT_PLUGINS variable
 set(PROJECT_PLUGINS ${PROJECT_PLUGINS} ${LIBRARY_NAME} PARENT_SCOPE)
+
+set(${LIBRARY_NAME}_LIBRARIES "/usr/local/lib/StateEstimator/libFactorGraphEstimator_plugin.so")
+
+message(${LIBRARY_NAME})
+message(${FactorGraphEstimator_plugin_LIBRARIES})

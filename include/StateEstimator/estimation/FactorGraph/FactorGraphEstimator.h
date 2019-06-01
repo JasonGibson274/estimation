@@ -25,12 +25,14 @@ namespace alphapilot {
 namespace estimator {
 class FactorGraphEstimator : Estimator {
 public:
-	FactorGraphEstimator();
+	explicit FactorGraphEstimator(std::shared_ptr<drone_state> initial_state);
 
-  virtual void callback_cm(const std::map<int, std::pair<double, double>> landmark_data);
+  virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data);
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(int rangestuff);
-  virtual void callback_imu(IMU_readings imu_data);
+  virtual void callback_imu(std::shared_ptr<IMU_readings> imu_data);
+
+  virtual void resetGraph(std::shared_ptr<drone_state> state);
 
 private:
 	// Declare variables here and also add_imu
@@ -43,11 +45,11 @@ private:
 	std::shared_ptr<gtsam::Pose3> current_position_guess_;
 	std::shared_ptr<gtsam::Vector3> current_velocity_guess_;
 	std::shared_ptr<gtsam::imuBias::ConstantBias> current_bias_guess_;
-	gtsam::Key bias_index_;
+	gtsam::Key bias_index_{};
 
 	std::mutex graph_lck_, preintegrator_lck_;
 	std::shared_ptr<gtsam::NonlinearFactorGraph> current_incremental_graph_;
-	std::map<int, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>*> landmark_factors_;
+	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>*> landmark_factors_;
 	std::shared_ptr<gtsam::ISAM2> isam_;
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
 	gtsam::Cal3_S2 K_;

@@ -12,52 +12,8 @@ namespace estimator {
   /**
    * Constructor for the Factor Graph Estimator;
    */
-  FactorGraphEstimator::FactorGraphEstimator() {
-    current_incremental_graph_ = make_shared<NonlinearFactorGraph>();
-    // Construct parameters for preintegration
-    auto params = PreintegrationParams::MakeSharedU(kGravity);
-    params->setAccelerometerCovariance(I_3x3 * 0.1);
-    params->setGyroscopeCovariance(I_3x3 * 0.1);
-    params->setIntegrationCovariance(I_3x3 * 0.1);
-    params->setUse2ndOrderCoriolis(false);
-    params->setOmegaCoriolis(Vector3(0, 0, 0));
-    preintegrator_imu_ = PreintegratedImuMeasurements(params);
-
-    // Add initial bias and state to graph
-    bias_index_ = Symbol('b', index);
-    current_position_guess_ = make_shared<Pose3>(Rot3(), Point3(0, 0, 0));
-    current_velocity_guess_ = make_shared<Vector3>(0, 0, 0);
-    current_bias_guess_ = make_shared<imuBias::ConstantBias>();
-    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index),
-                                              *current_position_guess_);
-    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index),
-                                              *current_velocity_guess_);
-    gtsam_current_state_initial_guess_->insert(bias_index_,
-                                              *current_bias_guess_);
-
-    // create priors on the state
-
-    // Assemble prior noise model and add it the graph.
-    noiseModel::Diagonal::shared_ptr pose_noise_model = noiseModel::Diagonal::Sigmas((Vector(6)
-            << 0.01, 0.01, 0.01, 0.5, 0.5, 0.5).finished()); // rad,rad,rad,m, m, m
-    noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3,0.1); // m/s
-    noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Isotropic::Sigma(6,1e-3);
-
-    current_incremental_graph_->add(PriorFactor<Pose3>(symbol_shorthand::X(index), *current_position_guess_, pose_noise_model));
-    current_incremental_graph_->add(PriorFactor<Vector3>(symbol_shorthand::V(index), *current_velocity_guess_, velocity_noise_model));
-    current_incremental_graph_->add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(index), *current_bias_guess_, bias_noise_model));
-
-    // Construct parameters for ISAM optimizer
-    ISAM2Params isam_parameters;
-    isam_parameters.relinearizeThreshold = 0.01;
-    isam_parameters.relinearizeSkip = 1;
-    isam_parameters.cacheLinearizedFactors = false;
-    isam_parameters.enableDetailedResults = true;
-    isam_parameters.print();
-    isam_ = make_shared<ISAM2>(isam_parameters);
-
-    // Initialze K
-    K_ = Cal3_S2(50.0, 50.0, 0.0, 50.0, 50.0);
+  FactorGraphEstimator::FactorGraphEstimator(std::shared_ptr<drone_state> initial_state) {
+    resetGraph(initial_state);
 
     // Initialize Noise Models
     cam_measurement_noise_ =
@@ -132,10 +88,10 @@ namespace estimator {
    *
    * @param map<landmark_id, uv_coords> landmark_data
    */
-  void FactorGraphEstimator::callback_cm(const map<int, pair<double, double>>
+  void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pair<double, double>>>
                                          landmark_data) {
-    for (auto seen_landmark : landmark_data) {
-      int l_id = seen_landmark.first;
+    for (auto seen_landmark : *landmark_data) {
+      std::string l_id = seen_landmark.first;
       pair<double, double> im_coords = seen_landmark.second;
       auto landmark_factor_it = landmark_factors_.find(l_id);
       // New Landmark - Add a new Factor
@@ -159,16 +115,16 @@ namespace estimator {
     }
   }
 
-  void FactorGraphEstimator::callback_imu(IMU_readings imu_data) {
+  void FactorGraphEstimator::callback_imu(std::shared_ptr<IMU_readings> imu_data) {
     // integrate the imu reading using affine dynamics from TODO cite
     // updates the current guesses of position
-    Vector3 accel = Vector3 (imu_data.x_accel, imu_data.y_accel, imu_data.z_accel);
+    Vector3 accel = Vector3 (imu_data->x_accel, imu_data->y_accel, imu_data->z_accel);
     // TODO check order
-    Vector3 ang_rate = Vector3 (imu_data.roll_vel, imu_data.pitch_vel, imu_data.yaw_vel);
-    preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data.dt);
+    Vector3 ang_rate = Vector3 (imu_data->roll_vel, imu_data->pitch_vel, imu_data->yaw_vel);
+    preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data->dt);
 
     // integrate the IMU to get an updated estimate of the current position
-    propagate_imu(current_pose_estimate_, accel, ang_rate, imu_data.dt);
+    propagate_imu(current_pose_estimate_, accel, ang_rate, imu_data->dt);
   }
 
   /**
@@ -271,7 +227,47 @@ namespace estimator {
   }
 
   void FactorGraphEstimator::callback_range(int rangestuff) {
+  }
 
+  void FactorGraphEstimator::resetGraph(std::shared_ptr<drone_state> initial_state) {
+    //clear
+    current_incremental_graph_ = make_shared<NonlinearFactorGraph>();
+    preintegrator_imu_.resetIntegration();
+    current_position_guess_ = make_shared<Pose3>(Rot3::Ypr(initial_state->yaw, initial_state->pitch, initial_state->roll),
+            Point3(initial_state->x,initial_state->y,initial_state->z));
+    current_velocity_guess_ = make_shared<Vector3>(initial_state->x_dot, initial_state->y_dot, initial_state->z_dot);
+    current_bias_guess_ = make_shared<imuBias::ConstantBias>();
+    gtsam_current_state_initial_guess_->clear();
+
+    // insert initial guesses of state
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index),
+                                              *current_position_guess_);
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index),
+                                              *current_velocity_guess_);
+    gtsam_current_state_initial_guess_->insert(bias_index_,
+                                              *current_bias_guess_);
+
+    // create priors on the state
+
+    // Assemble prior noise model and add it the graph.
+    noiseModel::Diagonal::shared_ptr pose_noise_model = noiseModel::Diagonal::Sigmas((Vector(6)
+            << 0.01, 0.01, 0.01, 0.5, 0.5, 0.5).finished()); // rad,rad,rad,m, m, m
+    noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3,0.1); // m/s
+    noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Isotropic::Sigma(6,1e-3);
+
+    // priors match initial guess
+    current_incremental_graph_->add(PriorFactor<Pose3>(symbol_shorthand::X(index), *current_position_guess_, pose_noise_model));
+    current_incremental_graph_->add(PriorFactor<Vector3>(symbol_shorthand::V(index), *current_velocity_guess_, velocity_noise_model));
+    current_incremental_graph_->add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(index), *current_bias_guess_, bias_noise_model));
+
+    // Construct parameters for ISAM optimizer
+    ISAM2Params isam_parameters;
+    isam_parameters.relinearizeThreshold = 0.01;
+    isam_parameters.relinearizeSkip = 1;
+    isam_parameters.cacheLinearizedFactors = false;
+    isam_parameters.enableDetailedResults = true;
+    isam_parameters.print();
+    isam_ = make_shared<ISAM2>(isam_parameters);
   }
 } // estimator
 } // StateEstimator
