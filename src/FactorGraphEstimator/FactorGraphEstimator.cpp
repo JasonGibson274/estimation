@@ -12,7 +12,7 @@ namespace estimator {
   /**
    * Constructor for the Factor Graph Estimator;
    */
-  FactorGraphEstimator::FactorGraphEstimator(const std::shared_ptr<drone_state> initial_state) {
+  FactorGraphEstimator::FactorGraphEstimator(const std::shared_ptr<drone_state>& initial_state) {
     gtsam_current_state_initial_guess_ = make_shared<Values>();
     K_ = boost::make_shared<gtsam::Cal3_S2>(50.0, 50.0, 0.0, 50.0, 50.0);
     boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedD(0.0);
@@ -247,6 +247,9 @@ namespace estimator {
   }
 
   void FactorGraphEstimator::resetGraph(const std::shared_ptr<drone_state> initial_state) {
+    lock_guard<mutex> graph_lck(graph_lck_);
+    lock_guard<mutex> preintegration_lck(preintegrator_lck_);
+
     //clear
     index = 0;
     bias_index_ = 0;
@@ -289,6 +292,11 @@ namespace estimator {
     isam_parameters.enableDetailedResults = true;
     isam_parameters.print();
     isam_ = make_shared<ISAM2>(isam_parameters);
+  }
+
+  drone_state FactorGraphEstimator::latest_state() {
+    lock_guard<mutex> graph_lck(graph_lck_);
+    return current_pose_estimate_;
   }
 
 } // estimator

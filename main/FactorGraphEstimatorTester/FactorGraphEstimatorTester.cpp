@@ -22,7 +22,6 @@ int main() {
   camera_reading->insert(std::make_pair("10-1", std::make_pair(5, 5)));
   estimator.callback_cm(camera_reading);
 
-
   std::cout << "\n\nfinished code\n\n" << std::endl;
   return 0;
 }

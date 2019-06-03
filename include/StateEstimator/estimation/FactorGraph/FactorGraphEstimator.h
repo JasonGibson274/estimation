@@ -26,7 +26,7 @@ namespace alphapilot {
 namespace estimator {
 class FactorGraphEstimator : Estimator {
 public:
-	FactorGraphEstimator(std::shared_ptr<drone_state> initial_state);
+	FactorGraphEstimator(const std::shared_ptr<drone_state>& initial_state);
 
   virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data);
   // TODO: Figure out what data structure is used for range finders
@@ -34,6 +34,8 @@ public:
   virtual void callback_imu(std::shared_ptr<IMU_readings> imu_data);
 
   virtual void resetGraph(std::shared_ptr<drone_state> state);
+
+  drone_state latest_state() override;
 
 private:
 	// Declare variables here and also add_imu
