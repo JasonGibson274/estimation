@@ -12,7 +12,24 @@ namespace estimator {
   /**
    * Constructor for the Factor Graph Estimator;
    */
-  FactorGraphEstimator::FactorGraphEstimator(std::shared_ptr<drone_state> initial_state) {
+  FactorGraphEstimator::FactorGraphEstimator(const std::shared_ptr<drone_state> initial_state) {
+    gtsam_current_state_initial_guess_ = make_shared<Values>();
+    K_ = boost::make_shared<gtsam::Cal3_S2>(50.0, 50.0, 0.0, 50.0, 50.0);
+    boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedD(0.0);
+    // TODO params
+    // PreintegrationBase params:
+    //p->accelerometerCovariance = measured_acc_cov; // acc white noise in continuous
+    //p->integrationCovariance = integration_error_cov; // integration uncertainty continuous
+    // should be using 2nd order integration
+    // PreintegratedRotation params:
+    //p->gyroscopeCovariance = measured_omega_cov; // gyro white noise in continuous
+    // PreintegrationCombinedMeasurements params:
+    //p->biasAccCovariance = bias_acc_cov; // acc bias in continuous
+    //p->biasOmegaCovariance = bias_omega_cov; // gyro bias in continuous
+    //p->biasAccOmegaInt = bias_acc_omega_int;
+
+    // use regular preintegrated
+    preintegrator_imu_ = PreintegratedImuMeasurements(p, gtsam::imuBias::ConstantBias());
     resetGraph(initial_state);
 
     // Initialize Noise Models
@@ -22,6 +39,7 @@ namespace estimator {
     Vector6 covvec;
     covvec << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
     bias_noise_ = noiseModel::Diagonal::Variances(covvec);
+
   }
 
   /**
@@ -49,7 +67,7 @@ namespace estimator {
       current_incremental_graph_->emplace_shared<BetweenFactor<
           imuBias::ConstantBias>>(b1, b2, imuBias::ConstantBias(),
                                   bias_noise_);
-      gtsam_current_state_initial_guess_->insert(bias_index_,
+      gtsam_current_state_initial_guess_->insert(symbol_shorthand::B(bias_index_),
                                                  *current_bias_guess_);
     }
 
@@ -59,7 +77,7 @@ namespace estimator {
                      symbol_shorthand::V(index - 1),
                      symbol_shorthand::X(index),
                      symbol_shorthand::V(index),
-                     bias_index_,
+                     symbol_shorthand::B(bias_index_),
                      preintegrator_imu_);
 
     // clear IMU rolling integration
@@ -90,16 +108,15 @@ namespace estimator {
    */
   void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pair<double, double>>>
                                          landmark_data) {
-    for (auto seen_landmark : *landmark_data) {
+    for (const auto& seen_landmark : *landmark_data) {
       std::string l_id = seen_landmark.first;
       pair<double, double> im_coords = seen_landmark.second;
       auto landmark_factor_it = landmark_factors_.find(l_id);
+
       // New Landmark - Add a new Factor
       if (landmark_factor_it == landmark_factors_.end()) {
-        // TODO magic number
-        Cal3_S2::shared_ptr K(new Cal3_S2(50.0, 50.0, 0.0, 50.0, 50.0));
         landmark_factors_[l_id] =
-          new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K);
+          new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K_);
       }
       // Translate detection into gtsam
       Point2 detection_coords(im_coords.first, im_coords.second);
@@ -124,7 +141,7 @@ namespace estimator {
     preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data->dt);
 
     // integrate the IMU to get an updated estimate of the current position
-    propagate_imu(current_pose_estimate_, accel, ang_rate, imu_data->dt);
+    //propagate_imu(current_pose_estimate_, accel, ang_rate, imu_data->dt);
   }
 
   /**
@@ -137,8 +154,8 @@ namespace estimator {
     lock_guard<mutex> graph_lck(graph_lck_);
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
 
-    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index), *current_position_guess_);
-    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index), *current_velocity_guess_);
+    //gtsam_current_state_initial_guess_->print();
+
     // TODO is bias guess being updated?
     //gtsam_current_state_initial_guess_->insert(symbol_shorthand::B(index), current_bias_guess_);
 
@@ -149,7 +166,7 @@ namespace estimator {
     // set the guesses of state to the correct output
     current_position_guess_ = make_shared<Pose3>(isam_->calculateEstimate<Pose3>(symbol_shorthand::X(index)));
     current_velocity_guess_ = make_shared<Vector3>(isam_->calculateEstimate<Vector3>(symbol_shorthand::V(index)));
-    current_bias_guess_ = make_shared<imuBias::ConstantBias>(isam_->calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(index)));
+    current_bias_guess_ = make_shared<imuBias::ConstantBias>(isam_->calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_)));
 
     // set the result to best guess
     current_pose_estimate_.x = current_position_guess_->x();
@@ -229,8 +246,10 @@ namespace estimator {
   void FactorGraphEstimator::callback_range(int rangestuff) {
   }
 
-  void FactorGraphEstimator::resetGraph(std::shared_ptr<drone_state> initial_state) {
+  void FactorGraphEstimator::resetGraph(const std::shared_ptr<drone_state> initial_state) {
     //clear
+    index = 0;
+    bias_index_ = 0;
     current_incremental_graph_ = make_shared<NonlinearFactorGraph>();
     preintegrator_imu_.resetIntegration();
     current_position_guess_ = make_shared<Pose3>(Rot3::Ypr(initial_state->yaw, initial_state->pitch, initial_state->roll),
@@ -244,8 +263,10 @@ namespace estimator {
                                               *current_position_guess_);
     gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index),
                                               *current_velocity_guess_);
-    gtsam_current_state_initial_guess_->insert(bias_index_,
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::B(bias_index_),
                                               *current_bias_guess_);
+
+    //gtsam_current_state_initial_guess_->print();
 
     // create priors on the state
 
@@ -258,7 +279,7 @@ namespace estimator {
     // priors match initial guess
     current_incremental_graph_->add(PriorFactor<Pose3>(symbol_shorthand::X(index), *current_position_guess_, pose_noise_model));
     current_incremental_graph_->add(PriorFactor<Vector3>(symbol_shorthand::V(index), *current_velocity_guess_, velocity_noise_model));
-    current_incremental_graph_->add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(index), *current_bias_guess_, bias_noise_model));
+    current_incremental_graph_->add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_), *current_bias_guess_, bias_noise_model));
 
     // Construct parameters for ISAM optimizer
     ISAM2Params isam_parameters;
@@ -269,5 +290,6 @@ namespace estimator {
     isam_parameters.print();
     isam_ = make_shared<ISAM2>(isam_parameters);
   }
+
 } // estimator
 } // StateEstimator

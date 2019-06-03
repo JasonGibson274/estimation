@@ -46,8 +46,8 @@ set(GTSAM_LIBRARIES "/usr/local/lib/libgtsam.so")
 
 # Add our source code
 include_directories(./include)
-add_subdirectory(main)
 add_subdirectory(src)
+add_subdirectory(main)
 
 # Install all library header files
 install(

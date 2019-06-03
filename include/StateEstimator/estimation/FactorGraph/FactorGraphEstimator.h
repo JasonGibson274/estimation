@@ -8,6 +8,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/geometry/SimpleCamera.h>
 #include <gtsam/navigation/ImuBias.h>
 #include <gtsam/navigation/ImuFactor.h>
+#include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
 
@@ -25,7 +26,7 @@ namespace alphapilot {
 namespace estimator {
 class FactorGraphEstimator : Estimator {
 public:
-	explicit FactorGraphEstimator(std::shared_ptr<drone_state> initial_state);
+	FactorGraphEstimator(std::shared_ptr<drone_state> initial_state);
 
   virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data);
   // TODO: Figure out what data structure is used for range finders
@@ -52,7 +53,7 @@ private:
 	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>*> landmark_factors_;
 	std::shared_ptr<gtsam::ISAM2> isam_;
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
-	gtsam::Cal3_S2 K_;
+	boost::shared_ptr<gtsam::Cal3_S2> K_;
 	int index = 0;
 	// Add the NoiseModels for IMU and Camera and RangeFinder
 	gtsam::noiseModel::Diagonal::shared_ptr cam_measurement_noise_;
