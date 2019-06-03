@@ -32,16 +32,19 @@ public:
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(int rangestuff);
   virtual void callback_imu(std::shared_ptr<IMU_readings> imu_data);
+  virtual void callback_odometry(std::shared_ptr<drone_state> odom_data);
 
   virtual void resetGraph(std::shared_ptr<drone_state> state);
+
+  virtual void run_optimize();
 
   drone_state latest_state() override;
 
 private:
 	// Declare variables here and also add_imu
-	virtual void run_optimize();
 	virtual void add_imu_factor();
-  void propagate_imu(drone_state current_state, gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
+	virtual void add_pose_factor();
+    void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
 	std::shared_ptr<gtsam::Values> gtsam_current_state_initial_guess_;
 
 	// Updated in callback_imu
@@ -49,6 +52,9 @@ private:
 	std::shared_ptr<gtsam::Vector3> current_velocity_guess_;
 	std::shared_ptr<gtsam::imuBias::ConstantBias> current_bias_guess_;
 	gtsam::Key bias_index_{};
+
+	gtsam::Pose3 pose_change_accum_;
+	gtsam::Vector3 vel_change_accum_;
 
 	std::mutex graph_lck_, preintegrator_lck_;
 	std::shared_ptr<gtsam::NonlinearFactorGraph> current_incremental_graph_;

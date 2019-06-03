@@ -10,23 +10,31 @@ const double kGravity = 9.81;
 namespace alphapilot {
 namespace estimator {
   /**
-   * Constructor for the Factor Graph Estimator;
+   * Constructor for the Factor Graph Estimator; sets up the noise models
+   * @param initial_state, start location to begin the optimization
    */
   FactorGraphEstimator::FactorGraphEstimator(const std::shared_ptr<drone_state>& initial_state) {
     gtsam_current_state_initial_guess_ = make_shared<Values>();
     K_ = boost::make_shared<gtsam::Cal3_S2>(548.4088134765625, 548.4088134765625, 0, 512.0, 384.0);
     boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedD(0.0);
-    // TODO params
-    // PreintegrationBase params:
-    //p->accelerometerCovariance = measured_acc_cov; // acc white noise in continuous
-    //p->integrationCovariance = integration_error_cov; // integration uncertainty continuous
-    // should be using 2nd order integration
-    // PreintegratedRotation params:
-    //p->gyroscopeCovariance = measured_omega_cov; // gyro white noise in continuous
-    // PreintegrationCombinedMeasurements params:
-    //p->biasAccCovariance = bias_acc_cov; // acc bias in continuous
-    //p->biasOmegaCovariance = bias_omega_cov; // gyro bias in continuous
-    //p->biasAccOmegaInt = bias_acc_omega_int;
+
+    double accel_noise_sigma = 2.0;
+    double gyro_noise_sigma = 0.1;
+    double accel_bias_rw_sigma = 0.1;
+    double gyro_bias_rw_sigma = 0.1;
+    Matrix33 measured_acc_cov = Matrix33::Identity(3,3) * pow(accel_noise_sigma,2);
+    Matrix33 measured_omega_cov = Matrix33::Identity(3,3) * pow(gyro_noise_sigma,2);
+    Matrix33 integration_error_cov = Matrix33::Identity(3,3)*1e-4; // error committed in integrating position from velocities
+    Matrix33 bias_acc_cov = Matrix33::Identity(3,3) * pow(accel_bias_rw_sigma,2);
+    Matrix33 bias_omega_cov = Matrix33::Identity(3,3) * pow(gyro_bias_rw_sigma,2);
+    Matrix66 bias_acc_omega_int = Matrix::Identity(6,6)*0.1; // error in the bias used for preintegration
+
+    p->accelerometerCovariance = measured_acc_cov; // acc white noise in continuous
+    p->integrationCovariance = integration_error_cov; // integration uncertainty continuous
+    p->gyroscopeCovariance = measured_omega_cov; // gyro white noise in continuous
+    p->biasAccCovariance = bias_acc_cov; // acc bias in continuous
+    p->biasOmegaCovariance = bias_omega_cov; // gyro bias in continuous
+    p->biasAccOmegaInt = bias_acc_omega_int;
 
     // use regular preintegrated
     preintegrator_imu_ = PreintegratedImuMeasurements(p, gtsam::imuBias::ConstantBias());
@@ -135,10 +143,7 @@ namespace estimator {
       landmark_factors_[l_id]->add(detection_coords,
                                    symbol_shorthand::X(index));
       graph_lck_.unlock();
-
     }
-
-    run_optimize();
   }
 
   void FactorGraphEstimator::callback_imu(std::shared_ptr<IMU_readings> imu_data) {
@@ -150,11 +155,11 @@ namespace estimator {
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
     preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data->dt);
     imu_meas_count_++;
-    std::cout << "integrate IMU\n" << accel << "\n" << ang_rate << std::endl;
+    //std::cout << "integrate IMU\n" << accel << "\n" << ang_rate << "\ndt=" << imu_data->dt << std::endl;
 
     // integrate the IMU to get an updated estimate of the current position
     // TODO does this make sense?
-    propagate_imu(current_pose_estimate_, accel, ang_rate, imu_data->dt);
+    propagate_imu(accel, ang_rate, imu_data->dt);
   }
 
   /**
@@ -163,6 +168,10 @@ namespace estimator {
    * This optimizes the entire state trajectory
    */
   void FactorGraphEstimator::run_optimize() {
+    if(current_incremental_graph_->empty()) {
+      std::cerr << "cannot optimize over a empty graph" << std::endl;
+      return;
+    }
     std::cout << "optimize" << std::endl;
     // run the optimization and output the final state
     lock_guard<mutex> graph_lck(graph_lck_);
@@ -179,6 +188,7 @@ namespace estimator {
     gtsam_current_state_initial_guess_->print();
     // run update and run optimization
     isam_->update(isam_graph, *gtsam_current_state_initial_guess_);
+    isam_->calculateEstimate().print();
     // set the guesses of state to the correct output
     current_position_guess_ = make_shared<Pose3>(isam_->calculateEstimate<Pose3>(symbol_shorthand::X(index)));
     current_velocity_guess_ = make_shared<Vector3>(isam_->calculateEstimate<Vector3>(symbol_shorthand::V(index)));
@@ -211,8 +221,8 @@ namespace estimator {
    * @param dt time difference
    */
    // TODO clean up method
-  void FactorGraphEstimator::propagate_imu(drone_state current_state, Vector3 acc, Vector3 angular_vel, double dt) {
-    drone_state result;
+  void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, double dt) {
+    drone_state result, current_state;
 
     //TODO this is wrong
     current_state.x = current_position_guess_->x();
@@ -232,7 +242,8 @@ namespace estimator {
     result.pitch_dot = angular_vel[1];
     result.pitch_dot = angular_vel[2];
 
-    //Position updates
+    //Position update
+    //TODO not use accel?
     result.x = current_state.x + current_state.x_dot*dt;
     result.y = current_state.y + current_state.y_dot*dt;
     result.z = current_state.z + current_state.z_dot*dt;
@@ -262,18 +273,14 @@ namespace estimator {
     result.pitch = p;
     result.yaw = y;
 
-
-
-    std::cout << "x = " << result.x << std::endl;
-
     // apply the update
     // the ordering is correct for gtsam
-    Pose3 pose_result = Pose3(Rot3::Ypr(result.yaw, result.pitch, result.roll),
-            Point3(result.x, result.y, result.z));
-    *current_position_guess_ = *current_position_guess_ * pose_result;
-    Vector3 vel_result = Vector3(result.x_dot, result.y_dot, result.z_dot);
-    *current_velocity_guess_ = *current_velocity_guess_ + vel_result;
+    //std::cout << "\n\n vel before: \n" << *current_velocity_guess_ << std::endl;
 
+    current_position_guess_ = std::make_shared<gtsam::Pose3>(Rot3::Ypr(result.yaw, result.pitch, result.roll),
+            Point3(result.x, result.y, result.z));
+    current_velocity_guess_ = std::make_shared<Vector3>(result.x_dot, result.y_dot, result.z_dot);
+    //std::cout << "\n\n vel after: \n" << *current_velocity_guess_ << std::endl;
   }
 
   void FactorGraphEstimator::callback_range(int rangestuff) {
@@ -291,7 +298,10 @@ namespace estimator {
     current_position_guess_ = make_shared<Pose3>(Rot3::Ypr(initial_state->yaw, initial_state->pitch, initial_state->roll),
             Point3(initial_state->x,initial_state->y,initial_state->z));
     current_velocity_guess_ = make_shared<Vector3>(initial_state->x_dot, initial_state->y_dot, initial_state->z_dot);
-    current_bias_guess_ = make_shared<imuBias::ConstantBias>();
+    Vector6 bias_tmp;
+    bias_tmp(2,0) = -1.0;
+    current_bias_guess_ = make_shared<imuBias::ConstantBias>(bias_tmp);
+    //current_bias_guess_ = make_shared<imuBias::ConstantBias>();
     gtsam_current_state_initial_guess_->clear();
 
     // insert initial guesses of state
@@ -330,6 +340,19 @@ namespace estimator {
   drone_state FactorGraphEstimator::latest_state() {
     lock_guard<mutex> graph_lck(graph_lck_);
     return current_pose_estimate_;
+  }
+
+  // TODO document that this assumes that the diff comes in
+  void FactorGraphEstimator::callback_odometry(std::shared_ptr<drone_state> odom_data) {
+    lock_guard<mutex> graph_lck(graph_lck_);
+    index++;
+    Pose3 pos_update (Rot3::Ypr(odom_data->yaw, odom_data->pitch, odom_data->roll),
+            Point3(odom_data->x, odom_data->y, odom_data->z));
+    Vector3 vel_update (odom_data->x_dot, odom_data->y_dot, odom_data->z_dot);
+    noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.2));
+
+    pose_change_accum_ = pose_change_accum_ * pos_update;
+    vel_change_accum_ += vel_update;
   }
 
 } // estimator
