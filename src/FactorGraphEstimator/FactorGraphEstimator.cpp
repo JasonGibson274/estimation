@@ -14,7 +14,7 @@ namespace estimator {
    */
   FactorGraphEstimator::FactorGraphEstimator(const std::shared_ptr<drone_state>& initial_state) {
     gtsam_current_state_initial_guess_ = make_shared<Values>();
-    K_ = boost::make_shared<gtsam::Cal3_S2>(50.0, 50.0, 0.0, 50.0, 50.0);
+    K_ = boost::make_shared<gtsam::Cal3_S2>(548.4088134765625, 548.4088134765625, 0, 512.0, 384.0);
     boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedD(0.0);
     // TODO params
     // PreintegrationBase params:
@@ -57,8 +57,8 @@ namespace estimator {
     // Update bias at a slower rate
     if (index % 5 == 0) {
       bias_index_++;
-      Symbol b1 = bias_index_ - 1;
-      Symbol b2 = bias_index_;
+      Symbol b1 = symbol_shorthand::B(bias_index_ - 1);
+      Symbol b2 = symbol_shorthand::B(bias_index_);
 
       // Motion model of bias - currently constant bias is assumed
 
@@ -82,6 +82,7 @@ namespace estimator {
 
     // clear IMU rolling integration
     preintegrator_imu_.resetIntegration();
+    imu_meas_count_ = 0;
 
     // Add factor to graph and add initial variable guesses
     lock_guard<mutex> lck(graph_lck_);
@@ -108,7 +109,15 @@ namespace estimator {
    */
   void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pair<double, double>>>
                                          landmark_data) {
+    // TODO verify that the landmark data is in the camera FOV
+    // if there is no IMU's then this is unconstrained
+    if(imu_meas_count_ <= 0) {
+      return;
+    }
+    // Create newest state
+    add_imu_factor();
     for (const auto& seen_landmark : *landmark_data) {
+      std::cout << "adding landmark detection " << seen_landmark.first << ", " << seen_landmark.second.first << ", " << seen_landmark.second.second << std::endl;
       std::string l_id = seen_landmark.first;
       pair<double, double> im_coords = seen_landmark.second;
       auto landmark_factor_it = landmark_factors_.find(l_id);
@@ -120,16 +129,16 @@ namespace estimator {
       }
       // Translate detection into gtsam
       Point2 detection_coords(im_coords.first, im_coords.second);
-      // Create newest state
-      add_imu_factor();
+
       // Add landmark to factor
       graph_lck_.lock();
       landmark_factors_[l_id]->add(detection_coords,
                                    symbol_shorthand::X(index));
       graph_lck_.unlock();
 
-      run_optimize();
     }
+
+    run_optimize();
   }
 
   void FactorGraphEstimator::callback_imu(std::shared_ptr<IMU_readings> imu_data) {
@@ -138,10 +147,14 @@ namespace estimator {
     Vector3 accel = Vector3 (imu_data->x_accel, imu_data->y_accel, imu_data->z_accel);
     // TODO check order
     Vector3 ang_rate = Vector3 (imu_data->roll_vel, imu_data->pitch_vel, imu_data->yaw_vel);
+    lock_guard<mutex> preintegration_lck(preintegrator_lck_);
     preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data->dt);
+    imu_meas_count_++;
+    std::cout << "integrate IMU\n" << accel << "\n" << ang_rate << std::endl;
 
     // integrate the IMU to get an updated estimate of the current position
-    //propagate_imu(current_pose_estimate_, accel, ang_rate, imu_data->dt);
+    // TODO does this make sense?
+    propagate_imu(current_pose_estimate_, accel, ang_rate, imu_data->dt);
   }
 
   /**
@@ -150,6 +163,7 @@ namespace estimator {
    * This optimizes the entire state trajectory
    */
   void FactorGraphEstimator::run_optimize() {
+    std::cout << "optimize" << std::endl;
     // run the optimization and output the final state
     lock_guard<mutex> graph_lck(graph_lck_);
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
@@ -161,6 +175,8 @@ namespace estimator {
 
     // create copy of the graph just in case
     NonlinearFactorGraph isam_graph = current_incremental_graph_->clone();
+    isam_graph.print();
+    gtsam_current_state_initial_guess_->print();
     // run update and run optimization
     isam_->update(isam_graph, *gtsam_current_state_initial_guess_);
     // set the guesses of state to the correct output
@@ -198,6 +214,24 @@ namespace estimator {
   void FactorGraphEstimator::propagate_imu(drone_state current_state, Vector3 acc, Vector3 angular_vel, double dt) {
     drone_state result;
 
+    //TODO this is wrong
+    current_state.x = current_position_guess_->x();
+    current_state.y = current_position_guess_->y();
+    current_state.z = current_position_guess_->z();
+
+    current_state.x_dot = (*current_velocity_guess_)[0];
+    current_state.y_dot = (*current_velocity_guess_)[1];
+    current_state.z_dot = (*current_velocity_guess_)[2];
+
+    current_state.roll = current_position_guess_->rotation().rpy()[0];
+    current_state.pitch = current_position_guess_->rotation().rpy()[1];
+    current_state.yaw = current_position_guess_->rotation().rpy()[2];
+
+    //Update angular rate
+    result.roll_dot = angular_vel[0];
+    result.pitch_dot = angular_vel[1];
+    result.pitch_dot = angular_vel[2];
+
     //Position updates
     result.x = current_state.x + current_state.x_dot*dt;
     result.y = current_state.y + current_state.y_dot*dt;
@@ -228,10 +262,9 @@ namespace estimator {
     result.pitch = p;
     result.yaw = y;
 
-    //Update angular rate
-    result.roll_dot = angular_vel[0];
-    result.pitch_dot = angular_vel[1];
-    result.pitch_dot = angular_vel[2];
+
+
+    std::cout << "x = " << result.x << std::endl;
 
     // apply the update
     // the ordering is correct for gtsam

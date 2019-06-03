@@ -56,6 +56,8 @@ private:
 	std::shared_ptr<gtsam::ISAM2> isam_;
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
 	boost::shared_ptr<gtsam::Cal3_S2> K_;
+	// the number of IMU messages currently integrated
+	int imu_meas_count_ = 0;
 	int index = 0;
 	// Add the NoiseModels for IMU and Camera and RangeFinder
 	gtsam::noiseModel::Diagonal::shared_ptr cam_measurement_noise_;
