@@ -17,7 +17,7 @@ namespace estimator {
     debug_ = debug;
 
     // init the set of Values passed to GTSAM during optimization
-    Values gtsam_current_state_initial_guess_;
+    vel_change_accum_ = Vector3(0,0,0);
 
     // init camera to flightgoggles default, TODO have correct estimate
     K_ = boost::make_shared<gtsam::Cal3_S2>(548.4088134765625, 548.4088134765625, 0, 512.0, 384.0);
@@ -160,9 +160,9 @@ namespace estimator {
     // TODO verify that the landmark data is in the camera FOV
     // if there is no IMU's then this is unconstrained
     //TODO if any odom callback has happened
-    //if(imu_meas_count_ <= 0) {
-    //  return;
-    //}
+    if(!position_update_) {
+      return;
+    }
     // Create newest state
     //add_imu_factor();
 
@@ -197,9 +197,10 @@ namespace estimator {
    * This optimizes the entire state trajectory
    */
   void FactorGraphEstimator::run_optimize() {
+    position_update_ = true;
     if(current_incremental_graph_.empty()) {
       current_incremental_graph_.print();
-      std::cerr << "cannot optimize over a empty graph" << std::endl;
+      //std::cerr << "cannot optimize over a empty graph" << std::endl;
       return;
     }
     std::cout << "optimize" << std::endl;
@@ -218,7 +219,7 @@ namespace estimator {
     gtsam_current_state_initial_guess_.print();
     // run update and run optimization
     isam_.update(isam_graph, gtsam_current_state_initial_guess_);
-    isam_.calculateEstimate().print();
+    //isam_.calculateEstimate().print();
     // set the guesses of state to the correct output
     current_position_guess_ = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(index_));
     current_velocity_guess_ = isam_.calculateEstimate<Vector3>(symbol_shorthand::V(index_));
@@ -381,8 +382,9 @@ namespace estimator {
     lock_guard<mutex> graph_lck(graph_lck_);
 
     // TODO this is wrong if we get close to an axis
-    Rot3 rot_update = Rot3::Ypr(odom_data->yaw - last_optimized_pose_.yaw, odom_data->pitch - last_optimized_pose_.pitch,
-        odom_data->roll - last_optimized_pose_.roll);
+    //Rot3 rot_update = Rot3::Ypr(odom_data->yaw - last_optimized_pose_.yaw, odom_data->pitch - last_optimized_pose_.pitch,
+    //   odom_data->roll - last_optimized_pose_.roll);
+    Rot3 rot_update = Rot3();
     Point3 trans_update = Point3(odom_data->x - last_optimized_pose_.x, odom_data->y - last_optimized_pose_.y,
         odom_data->z - last_optimized_pose_.z);
 
@@ -390,10 +392,13 @@ namespace estimator {
 
     Vector3 vel_update (odom_data->x_dot - last_optimized_pose_.x_dot, odom_data->y_dot - last_optimized_pose_.y_dot,
         odom_data->z_dot - last_optimized_pose_.z_dot);
+    std::cout << "pose diff " << pos_update << std::endl;
     noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.2));
 
     pose_change_accum_ = pose_change_accum_ * pos_update;
     vel_change_accum_ += vel_update;
+
+    std::cout << "pose accum " << pose_change_accum_ << std::endl;
   }
 
   void FactorGraphEstimator::add_pose_factor() {
@@ -410,8 +415,8 @@ namespace estimator {
                                               current_position_guess_ * pose_change_accum_);
     Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
     gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_), temp_vel);
-    vel_change_accum_ = Vector3();
-    pose_change_accum_ = Pose3();
+    vel_change_accum_ = Vector3(0,0,0);
+    pose_change_accum_ = Pose3(Rot3(), Point3(0,0,0));
   }
 
   void FactorGraphEstimator::add_factors() {

@@ -49,6 +49,7 @@ private:
 
     // ========== GENERIC VARS =======
     bool debug_ = true;
+    bool position_update_ = false;
 
     // ========= POSE FACTOR HELPERS =========
 	// current diff since last optimization for Pose3 between factor
