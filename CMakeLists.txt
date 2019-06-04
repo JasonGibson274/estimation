@@ -36,7 +36,9 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 # Find tbb
 find_package(TBB COMPONENTS tbb tbbmalloc)
 if(TBB_FOUND)
+    message(${NEEDED_LIBRARIES})
 	list(APPEND NEEDED_LIBRARIES tbb tbbmalloc)
+    message(${NEEDED_LIBRARIES})
 endif()
 
 # Find GTSAM
@@ -46,6 +48,7 @@ set(GTSAM_LIBRARIES "/usr/local/lib/libgtsam.so")
 
 # Add our source code
 include_directories(./include)
+
 add_subdirectory(src)
 
 # Install all library header files
