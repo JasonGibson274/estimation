@@ -2,16 +2,27 @@ cmake_minimum_required(VERSION 3.00)
 project(StateEstimator)
 
 # Add custom cmake finds
-set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
+
 # Add macro for subdirectories
 include(MacroSubDirList)
 
 set(BUILD_FLAGS "-std=c++11 -Wuninitialized -Wall -Wextra")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${BUILD_FLAGS}")
 
-# fetch all the local directories for generated code
-get_filename_component(PROJECT_LIBS_DIR ${PROJECT_BINARY_DIR}/lib ABSOLUTE)
-# get_filename_component(SCRIMMAGE_INC_DIR ./include ABSOLUTE)
+# Allow the executable location to be overwritten from command line
+if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+endif()
+
+# Allow the lib location to be overwritten from command line
+if (NOT CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+	get_filename_component(PROJECT_LIBS_DIR ${PROJECT_BINARY_DIR}/lib ABSOLUTE)
+	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
+	message("${PROJECT_LIBS_DIR}")
+else()
+	get_filename_component(PROJECT_LIBS_DIR ${CMAKE_LIBRARY_OUTPUT_DIRECTORY} ABSOLUTE)
+endif()
 
 # Use ccache if available for faster compilations
 # see : https://crascit.com/2016/04/09/using-ccache-with-cmake/
@@ -31,25 +42,49 @@ list(APPEND NEEDED_LIBRARIES ${Boost_FILESYSTEM_LIBRARY} ${Boost_SYSTEM_LIBRARY}
 # Find Eigen
 find_package(Eigen3 REQUIRED)
 include_directories(${EIGEN3_INCLUDE_DIR})
-# add_subdirectory(cmake)
+
 
 # Find tbb
 find_package(TBB COMPONENTS tbb tbbmalloc)
 if(TBB_FOUND)
-    message(${NEEDED_LIBRARIES})
 	list(APPEND NEEDED_LIBRARIES tbb tbbmalloc)
-    message(${NEEDED_LIBRARIES})
+    message(STATUS "Found TBB")
+elseif()
+	message(STATUS "No tbb Found")
 endif()
 
 # Find GTSAM
-find_package(GTSAM REQUIRED)
-include_directories(${GTSAM_INCLUDE_DIR})
-set(GTSAM_LIBRARIES "/usr/local/lib/libgtsam.so")
+find_package(GTSAM)
+if(GTSAM_FOUND)
+	# The following line might only work when gtsam is built on the same machine
+	# get_target_property(GTSAM_LIBRARIES gtsam IMPORTED_LOCATION_RELEASE)
+	#[[
+	This line gets all of the include directories for gtsam as they have them
+	spread out.
+	]]
+	get_target_property(GTSAM_INCLUDE_DIR gtsam INTERFACE_INCLUDE_DIRECTORIES)
+	# This set command works but I'm unsure how exactly
+	set(GTSAM_LIBRARIES gtsam)
+	message(STATUS "Found GTSAM:")
+	message(STATUS "  ${GTSAM_LIBRARIES}")
+	message(STATUS "Found GTSAM_INCLUDE_DIR:")
+	message(STATUS "  ${GTSAM_INCLUDE_DIR}")
+	include_directories(${GTSAM_INCLUDE_DIR})
+	# Old way to find GTSAM library. Might still be useful in future
+	# set(GTSAM_LIBRARIES "/usr/local/lib/libgtsam.so")
+else()
+	message(WARNING "No GTSAM Found. Most plugins and executables will not build.")
+endif()
 
 # Add our source code
-include_directories(./include)
+include_directories(${PROJECT_SOURCE_DIR}/include)
 
 add_subdirectory(src)
+add_subdirectory(main)
+
+foreach(state_plugin ${PROJECT_PLUGINS})
+	message(STATUS "Building ${state_plugin}...")
+endforeach()
 
 # Install all library header files
 install(
@@ -59,7 +94,3 @@ install(
   )
 
 set(${PROJECT_NAME}_INCLUDE_DIR include)
-
-add_subdirectory(main)
-
-# TODO: build and install all libraries/executables

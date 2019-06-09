@@ -190,7 +190,7 @@ void step_graph(Pose2 action, std::vector<double> obs, Pose2 estimate_t) {
 
 }
 
-int main(int argc, char** argv) {
+int main() {
   // // 2b. Add "GPS-like" measurements
   // // We will use our custom UnaryFactor for this.
 

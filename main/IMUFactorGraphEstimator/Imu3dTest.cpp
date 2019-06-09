@@ -81,12 +81,12 @@ vector<double> estimated_velocity_ = {0, 0, 0};
 
 // Given an action, observation of the new state, and an estimate of the new state
 // Recalculates the most likely states for all t and prints it out
-void propogate_motion_graph(Pose3 new_pose, Vector3 new_vel) {
+void propogate_motion_graph(Pose3 /*new_pose*/, Vector3 /*new_vel*/) {
   t++;
 
 }
 
-int main(int argc, char** argv) {
+int main() {
   // create the prior on position and add it to the graph
   Point3 prior_position(0,0,5);
   Rot3 prior_rot = Rot3();
