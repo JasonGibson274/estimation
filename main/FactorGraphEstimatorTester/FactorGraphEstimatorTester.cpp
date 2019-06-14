@@ -12,10 +12,12 @@ int main() {
   init_state->z = 1.0;
   FactorGraphEstimator estimator(init_state, true);
   std::cout << "\ninit ended\n" << std::endl;
-  std::cout << "\nstarting imu callback\n" << std::endl;
+  std::cout << "\nstarting odom callback\n" << std::endl;
   std::shared_ptr<drone_state> reading = std::make_shared<drone_state>();
   reading->x = 1;
   reading->z = 1;
+  reading->x_dot = 1;
+  estimator.callback_odometry(reading);
   estimator.callback_odometry(reading);
   std::cout << "\nodom callback ended\n" << std::endl;
   std::cout << "\nstarting camera callback\n" << std::endl;
