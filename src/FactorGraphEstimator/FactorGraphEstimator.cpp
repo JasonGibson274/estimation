@@ -64,9 +64,9 @@ namespace estimator {
     bias_noise_ = noiseModel::Diagonal::Variances(covvec);
 
     // pose factor noise
-    odometry_vel_noise_ = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.2));
+    odometry_vel_noise_ = noiseModel::Diagonal::Sigmas(Vector3(0.1, 0.1, 0.1));
     Vector6 pose_noise;
-    //pose_noise << 0.2, 0.2, 0.1, 0.1, 0.1, 0.1;
+    pose_noise << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
     odometry_pose_noise_ = noiseModel::Diagonal::Sigmas(Vector6(pose_noise));
 
     // add the priors on state
@@ -173,6 +173,8 @@ namespace estimator {
 
     // if there is no position updates this is unconstrained
     if(!position_update_) {
+      std::cerr << "ERROR: no position updates have happened but camera was recieved\n" <<
+                   "Not optimizing otherwise unconstrained optimization" << std::endl;
       return;
     }
     // Create newest state
@@ -185,8 +187,10 @@ namespace estimator {
 
       // New Landmark - Add a new Factor
       if (landmark_factor_it == landmark_factors_.end()) {
-        landmark_factors_[l_id] =
-          new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K_);
+        SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor(new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K_));
+        landmark_factors_[l_id] = smartFactor;
+        // TODO add factor
+        //current_incremental_graph_.push_back(smartFactor);
       }
       // Translate detection into gtsam
       Point2 detection_coords(im_coords.first, im_coords.second);
@@ -199,17 +203,25 @@ namespace estimator {
     }
   }
 
+  std::vector<std::array<double, 3>> FactorGraphEstimator::get_landmark_positions() {
+    // TODO return variable, set up elsewhere when optimize is called
+    std::vector<std::array<double, 3>> result;
+    //for(auto it = landmark_factors_.begin(); it != landmark_factors_.end(); it++) {
+    //  boost::optional<Point3> point = it->point();
+    //}
+    return result;
+  }
+
 
 
   /**
    * Adds the local factor graph that was constructed during the most recent
    * callbacks, then clears the graph for the next iteration.
-   * This optimizes the 2019-06-02-22-15-56.bagentire state trajectory
+   * This optimizes the entire state trajectory
    */
   void FactorGraphEstimator::run_optimize() {
     if(current_incremental_graph_.empty()) {
-      current_incremental_graph_.print();
-      //std::cerr << "cannot optimize over a empty graph" << std::endl;
+      std::cerr << "\n\nERROR: cannot optimize over a empty graph\n" << std::endl;
       return;
     }
     position_update_ = false;
@@ -218,12 +230,7 @@ namespace estimator {
     lock_guard<mutex> graph_lck(graph_lck_);
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
 
-    //gtsam_current_state_initial_guess_.print();
 
-    // TODO is bias guess being updated?
-    //gtsam_current_state_initial_guess_.insert(symbol_shorthand::B(index_), current_bias_guess_);
-
-    // create copy of the graph just in case
     NonlinearFactorGraph isam_graph = current_incremental_graph_.clone();
     if(debug_) {
       std::cout << "\n\n incremental graph" << std::endl;
@@ -235,11 +242,12 @@ namespace estimator {
     // run update and run optimization
     isam_.update(isam_graph, gtsam_current_state_initial_guess_);
 
-
     // set the guesses of state to the correct output
     current_position_guess_ = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(index_));
     current_velocity_guess_ = isam_.calculateEstimate<Vector3>(symbol_shorthand::V(index_));
-    current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_));
+    if(use_imu_factors_) {
+      current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_));
+    }
 
     if(debug_) {
       std::cout << "\n\n current position guess" << std::endl;
@@ -264,8 +272,8 @@ namespace estimator {
     last_optimized_pose_ = current_pose_estimate_;
 
     // clear incremental graph and current guesses
-    current_incremental_graph_ = NonlinearFactorGraph();
-    gtsam_current_state_initial_guess_.clear();
+    //current_incremental_graph_ = NonlinearFactorGraph();
+    //gtsam_current_state_initial_guess_.clear();
 
   }
 
@@ -345,11 +353,11 @@ namespace estimator {
   }
 
   void FactorGraphEstimator::add_priors(const std::shared_ptr<drone_state> initial_state) {
-    current_position_guess_ = Pose3(Rot3::Ypr(initial_state->yaw, initial_state->pitch, initial_state->roll),
+    current_position_guess_ = Pose3(/*Rot3::Ypr(initial_state->yaw, initial_state->pitch, initial_state->roll)*/ Rot3(),
             Point3(initial_state->x,initial_state->y,initial_state->z));
     current_velocity_guess_ = Vector3(initial_state->x_dot, initial_state->y_dot, initial_state->z_dot);
     Vector6 bias_tmp;
-    bias_tmp(2,0) = -1.0;
+    bias_tmp << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     current_bias_guess_ = imuBias::ConstantBias(bias_tmp);
     gtsam_current_state_initial_guess_.clear();
 
@@ -358,8 +366,11 @@ namespace estimator {
                                               current_position_guess_);
     gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_),
                                               current_velocity_guess_);
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::B(bias_index_),
+    if(use_imu_factors_) {
+      gtsam_current_state_initial_guess_.insert(symbol_shorthand::B(bias_index_),
                                               current_bias_guess_);
+    }
+
 
     //gtsam_current_state_initial_guess_->print();
 
@@ -367,14 +378,29 @@ namespace estimator {
 
     // Assemble prior noise model and add it the graph.
     noiseModel::Diagonal::shared_ptr pose_noise_model = noiseModel::Diagonal::Sigmas((Vector(6)
-            << 0.01, 0.01, 0.01, 0.5, 0.5, 0.5).finished()); // rad,rad,rad,m, m, m
+            << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1).finished()); // rad,rad,rad,m, m, m
     noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3,0.1); // m/s
     noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Isotropic::Sigma(6,1e-3);
 
     // priors match initial guess
     current_incremental_graph_.add(PriorFactor<Pose3>(symbol_shorthand::X(index_), current_position_guess_, pose_noise_model));
     current_incremental_graph_.add(PriorFactor<Vector3>(symbol_shorthand::V(index_), current_velocity_guess_, velocity_noise_model));
-    current_incremental_graph_.add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_), current_bias_guess_, bias_noise_model));
+    if(use_imu_factors_) {
+      current_incremental_graph_.add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_), current_bias_guess_, bias_noise_model));
+    }
+
+    // set the result to initial guess
+    current_pose_estimate_.x = current_position_guess_.x();
+    current_pose_estimate_.y = current_position_guess_.y();
+    current_pose_estimate_.z = current_position_guess_.z();
+
+    current_pose_estimate_.roll = current_position_guess_.rotation().rpy()[0];
+    current_pose_estimate_.pitch = current_position_guess_.rotation().rpy()[1];
+    current_pose_estimate_.yaw = current_position_guess_.rotation().rpy()[2];
+
+    current_pose_estimate_.x_dot = current_velocity_guess_[0];
+    current_pose_estimate_.y_dot = current_velocity_guess_[1];
+    current_pose_estimate_.z_dot = current_velocity_guess_[2];
 
     //
     last_optimized_pose_ = current_pose_estimate_;
@@ -414,8 +440,9 @@ namespace estimator {
     } else if(angle1 < 0 && angle2 >= 0) {
       return (M_PI * 2 + angle1) - angle2;
     } else {
-      std::cerr << "problem in angle diff calc" << std::endl;
+      std::cerr << "ERROR: problem in angle diff calc" << std::endl;
     }
+    return 0;
   }
 
   /**

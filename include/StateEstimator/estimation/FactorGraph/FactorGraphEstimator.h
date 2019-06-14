@@ -36,6 +36,8 @@ public:
 
   virtual void resetGraph(std::shared_ptr<drone_state> state);
 
+  virtual std::vector<std::array<double, 3>> get_landmark_positions();
+
   virtual void run_optimize();
 
   drone_state latest_state() override;
@@ -50,11 +52,14 @@ private:
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
+  // if any thing has updated the estimate of position
   bool position_update_ = false;
   bool use_pose_factors_ = true;
-  bool use_imu_factors_ = true;
+  bool use_imu_factors_ = false;
   bool use_camera_factors_ = true;
   bool use_range_factors_ = false;
+
+  int previous_optimization_index_ = 0;
 
   // ========= POSE FACTOR HELPERS =========
   // number of pose messages
@@ -89,7 +94,7 @@ private:
 
 	// ========== PROJECTION FACTOR =============
 	// keeps track of the projection factors for each landmark
-	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>*> landmark_factors_;
+	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> landmark_factors_;
   boost::shared_ptr<gtsam::Cal3_S2> K_;
 
   // ========== IMU ===========================
