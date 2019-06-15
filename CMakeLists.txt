@@ -6,8 +6,12 @@ set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/
 
 # Add macro for subdirectories
 include(MacroSubDirList)
+# Fix needed for linaro gcc compiler according to https://gcc.gnu.org/onlinedocs/gcc/Directory-Options.html
+#set(CMAKE_INCLUDE_SYSTEM_FLAG_CXX "-I")
+message("WE ARE USING ${CMAKE_INCLUDE_SYSTEM_FLAG_CXX}")
 
-set(BUILD_FLAGS "-std=c++11 -Wuninitialized -Wall -Wextra")
+option(ESTIMATION_BUILD_EXAMPLES_ALWAYS "Whether or not executables (tests) should be built" ON)
+set(BUILD_FLAGS "-std=c++11 -Wuninitialized -Wall")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${BUILD_FLAGS}")
 
 # Allow the executable location to be overwritten from command line
@@ -80,7 +84,9 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
 add_subdirectory(src)
-add_subdirectory(main)
+if (ESTIMATION_BUILD_EXAMPLES_ALWAYS)
+	add_subdirectory(main)
+endif()
 
 foreach(state_plugin ${PROJECT_PLUGINS})
 	message(STATUS "Building ${state_plugin}...")

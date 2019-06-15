@@ -27,6 +27,9 @@ struct drone_covariance {
   double yaw_dot = 0.0;
 };
 
+// Shorthand for the data structure used for landmarks
+typedef std::map<std::string, std::pair<double, double>> landmarkMap;
+
 struct drone_state
 {
   double x = 0.0;
@@ -53,5 +56,5 @@ struct camera_info {
  double u0 = 0.0;
  double v0 = 0.0;
 };
-} // StateEstimator
+} // alphapilot
 #endif // UTILS_MSGS_H_
