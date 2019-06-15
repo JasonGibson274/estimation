@@ -57,7 +57,7 @@ namespace estimator {
 
     // Initialize Noise Models
     cam_measurement_noise_ =
-      noiseModel::Isotropic::Sigma(2, 1.0);  // one pixel in u and v
+      noiseModel::Isotropic::Sigma(2, 10.0);  // one pixel in u and v
 
     Vector6 covvec;
     covvec << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
@@ -188,7 +188,6 @@ namespace estimator {
       if (landmark_factor_it == landmark_factors_.end()) {
         SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor(new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K_));
         landmark_factors_[l_id] = smartFactor;
-        // TODO add factor
         //current_incremental_graph_.push_back(smartFactor);
       }
       // Translate detection into gtsam
@@ -229,16 +228,16 @@ namespace estimator {
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
 
 
-    NonlinearFactorGraph isam_graph = current_incremental_graph_.clone();
+    //NonlinearFactorGraph isam_graph = current_incremental_graph_.clone();
     if(debug_) {
       std::cout << "\n\n incremental graph" << std::endl;
-      isam_graph.print();
+      current_incremental_graph_.print();
       std::cout << "\n\n guess state guesses" << std::endl;
       gtsam_current_state_initial_guess_.print();
     }
 
     // run update and run optimization
-    isam_.update(isam_graph, gtsam_current_state_initial_guess_);
+    isam_.update(current_incremental_graph_, gtsam_current_state_initial_guess_);
 
     // set the guesses of state to the correct output
     current_position_guess_ = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(index_));
@@ -496,7 +495,7 @@ namespace estimator {
 
     // add constraint on the poses
     // transforms the position offset into body frame offset
-    Point3 body_trans = current_position_guess_.transformTo(pose_trans_accum_) + current_position_guess_.translation();
+    Point3 body_trans = current_position_guess_.transformTo(pose_trans_accum_ + current_position_guess_.translation());
     std::cout << "pose_trans_accum body frame = " << body_trans << std::endl;
     // assumes that the pose change is in body frame
     current_incremental_graph_.emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_-1),

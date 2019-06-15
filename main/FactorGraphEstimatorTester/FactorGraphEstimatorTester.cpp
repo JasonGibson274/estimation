@@ -41,10 +41,21 @@ int main() {
 
   std::cout << "\nstarting camera callback\n" << std::endl;
   std::shared_ptr<std::map<std::string, std::pair<double, double>>> camera_reading = std::make_shared<std::map<std::string, std::pair<double, double>>>();
-  camera_reading->insert(std::make_pair("Gate10-1", std::make_pair(402.281, 195.785)));
-  camera_reading->insert(std::make_pair("Gate12-3", std::make_pair(55.6591, 147.801)));
+  //camera_reading->insert(std::make_pair("Gate10-1", std::make_pair(402.281, 195.785)));
+  //camera_reading->insert(std::make_pair("Gate12-3", std::make_pair(55.6591, 147.801)));
   estimator.callback_cm(camera_reading);
+
   drone_state result = estimator.latest_state();
+
+  std::cout << "\nstarting odom callback\n" << std::endl;
+  reading_odom->x = 0;
+  estimator.callback_odometry(reading_odom);
+  std::cout << "\nodom callback ended\n" << std::endl;
+
+  std::cout << "\nstarting camera callback\n" << std::endl;
+  estimator.callback_cm(camera_reading);
+
+  result = estimator.latest_state();
   std::cout << "\n\nfinished code\n\n" << std::endl;
   /*
   NonlinearFactorGraph current_incremental_graph_;
