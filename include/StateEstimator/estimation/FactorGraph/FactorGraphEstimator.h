@@ -6,10 +6,12 @@ Authors: Bogdan Vlahov and Jason Gibson
 #define FactorGraphEstimator_H_
 
 #include <gtsam/geometry/SimpleCamera.h>
+#include <gtsam/geometry/Quaternion.h>
 #include <gtsam/navigation/ImuBias.h>
 #include <gtsam/navigation/ImuFactor.h>
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
+#include <gtsam/slam/SmartProjectionPoseFactor.h>
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
 
 #include <StateEstimator/Utils.h>
@@ -48,7 +50,6 @@ private:
 	virtual void add_priors(std::shared_ptr<drone_state> initial_state);
 	virtual void add_factors();
   void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
-  double get_angle_diff(double angle1, double angle2);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
@@ -65,7 +66,8 @@ private:
   // number of pose messages
   int pose_message_count_ = 0;
 	// current diff since last optimization for Pose3 between factor
-	gtsam::Pose3 pose_change_accum_;
+	gtsam::Rot3 pose_rot_accum_;
+	gtsam::Point3 pose_trans_accum_;
 	// current diff since last optimization for vel between factor
 	gtsam::Vector3 vel_change_accum_;
   drone_state last_pose_state_;

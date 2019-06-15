@@ -90,7 +90,6 @@ namespace estimator {
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
     preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data->dt);
     imu_meas_count_++;
-    //std::cout << "integrate IMU\n" << accel << "\n" << ang_rate << "\ndt=" << imu_data->dt << std::endl;
 
     // integrate the IMU to get an updated estimate of the current position
     // integrate the imu reading using affine dynamics from TODO cite
@@ -180,7 +179,7 @@ namespace estimator {
     // Create newest state
     add_factors();
     for (const auto& seen_landmark : *landmark_data) {
-      std::cout << "adding landmark detection " << seen_landmark.first << ", " << seen_landmark.second.first << ", " << seen_landmark.second.second << std::endl;
+      //std::cout << "adding landmark detection " << seen_landmark.first << ", " << seen_landmark.second.first << ", " << seen_landmark.second.second << std::endl;
       std::string l_id = seen_landmark.first;
       pair<double, double> im_coords = seen_landmark.second;
       auto landmark_factor_it = landmark_factors_.find(l_id);
@@ -225,7 +224,6 @@ namespace estimator {
       return;
     }
     position_update_ = false;
-    std::cout << "optimize" << std::endl;
     // run the optimization and output the final state
     lock_guard<mutex> graph_lck(graph_lck_);
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
@@ -261,9 +259,10 @@ namespace estimator {
     current_pose_estimate_.y = current_position_guess_.y();
     current_pose_estimate_.z = current_position_guess_.z();
 
-    current_pose_estimate_.roll = current_position_guess_.rotation().rpy()[0];
-    current_pose_estimate_.pitch = current_position_guess_.rotation().rpy()[1];
-    current_pose_estimate_.yaw = current_position_guess_.rotation().rpy()[2];
+    current_pose_estimate_.qw = current_position_guess_.rotation().quaternion()[0];
+    current_pose_estimate_.qx = current_position_guess_.rotation().quaternion()[1];
+    current_pose_estimate_.qy = current_position_guess_.rotation().quaternion()[2];
+    current_pose_estimate_.qz = current_position_guess_.rotation().quaternion()[3];
 
     current_pose_estimate_.x_dot = current_velocity_guess_[0];
     current_pose_estimate_.y_dot = current_velocity_guess_[1];
@@ -294,9 +293,9 @@ namespace estimator {
     current_state.y_dot = current_velocity_guess_[1];
     current_state.z_dot = current_velocity_guess_[2];
 
-    current_state.roll = current_position_guess_.rotation().rpy()[0];
-    current_state.pitch = current_position_guess_.rotation().rpy()[1];
-    current_state.yaw = current_position_guess_.rotation().rpy()[2];
+    double roll = current_position_guess_.rotation().rpy()[0];
+    double pitch = current_position_guess_.rotation().rpy()[1];
+    double yaw = current_position_guess_.rotation().rpy()[2];
 
     //Update angular rate
     result.roll_dot = angular_vel[0];
@@ -311,12 +310,12 @@ namespace estimator {
     //Update velocity
     float c_phi, c_theta, c_psi, s_phi, s_theta, s_psi;
     float ux, uy, uz;
-    c_phi = cosf(current_state.roll);
-    c_theta = cosf(current_state.pitch);
-    c_psi = cosf(current_state.yaw);
-    s_phi = sinf(current_state.roll);
-    s_theta = sinf(current_state.pitch);
-    s_psi = sinf(current_state.yaw);
+    c_phi = cosf(roll);
+    c_theta = cosf(pitch);
+    c_psi = cosf(yaw);
+    s_phi = sinf(roll);
+    s_theta = sinf(pitch);
+    s_psi = sinf(yaw);
     ux = acc[0]*dt;
     uy = acc[1]*dt;
     uz = acc[2]*dt;
@@ -326,18 +325,15 @@ namespace estimator {
 
     //Update the euler angles
     float r, p, y;
-    r = current_state.roll + (current_state.roll_dot + (s_phi*s_theta/c_theta)*current_state.pitch_dot + (c_phi*s_theta/c_theta)*current_state.yaw_dot)*dt;
-    p = current_state.pitch + (c_phi*current_state.pitch_dot - s_phi*current_state.yaw_dot)*dt;
-    y = current_state.yaw + (s_phi/c_theta*current_state.pitch_dot + c_phi/c_theta*current_state.yaw_dot)*dt;
-    result.roll = r;
-    result.pitch = p;
-    result.yaw = y;
+    r = roll + (current_state.roll_dot + (s_phi*s_theta/c_theta)*current_state.pitch_dot + (c_phi*s_theta/c_theta)*current_state.yaw_dot)*dt;
+    p = pitch + (c_phi*current_state.pitch_dot - s_phi*current_state.yaw_dot)*dt;
+    y = yaw + (s_phi/c_theta*current_state.pitch_dot + c_phi/c_theta*current_state.yaw_dot)*dt;
 
     // apply the update
     // the ordering is correct for gtsam
     //std::cout << "\n\n vel before: \n" << *current_velocity_guess_ << std::endl;
 
-    current_position_guess_ = Pose3(Rot3::Ypr(result.yaw, result.pitch, result.roll),
+    current_position_guess_ = Pose3(Rot3::Ypr(y, p, r),
             Point3(result.x, result.y, result.z));
     current_velocity_guess_ = Vector3(result.x_dot, result.y_dot, result.z_dot);
     //std::cout << "\n\n vel after: \n" << *current_velocity_guess_ << std::endl;
@@ -351,8 +347,10 @@ namespace estimator {
   }
 
   void FactorGraphEstimator::add_priors(const std::shared_ptr<drone_state> initial_state) {
-    current_position_guess_ = Pose3(/*Rot3::Ypr(initial_state->yaw, initial_state->pitch, initial_state->roll)*/ Rot3(),
+    current_position_guess_ = Pose3(Rot3::Quaternion(initial_state->qw, initial_state->qx, initial_state->qy, initial_state->qz),
             Point3(initial_state->x,initial_state->y,initial_state->z));
+    std::cout << "initial position guess " << std::endl;
+    current_position_guess_.print();
     current_velocity_guess_ = Vector3(initial_state->x_dot, initial_state->y_dot, initial_state->z_dot);
     Vector6 bias_tmp;
     bias_tmp << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
@@ -392,13 +390,16 @@ namespace estimator {
     current_pose_estimate_.y = current_position_guess_.y();
     current_pose_estimate_.z = current_position_guess_.z();
 
-    current_pose_estimate_.roll = current_position_guess_.rotation().rpy()[0];
-    current_pose_estimate_.pitch = current_position_guess_.rotation().rpy()[1];
-    current_pose_estimate_.yaw = current_position_guess_.rotation().rpy()[2];
+    current_pose_estimate_.qw = current_position_guess_.rotation().quaternion()[0];
+    current_pose_estimate_.qx = current_position_guess_.rotation().quaternion()[1];
+    current_pose_estimate_.qy = current_position_guess_.rotation().quaternion()[2];
+    current_pose_estimate_.qz = current_position_guess_.rotation().quaternion()[3];
 
     current_pose_estimate_.x_dot = current_velocity_guess_[0];
     current_pose_estimate_.y_dot = current_velocity_guess_[1];
     current_pose_estimate_.z_dot = current_velocity_guess_[2];
+
+    last_pose_state_ = current_pose_estimate_;
 
   }
 
@@ -428,19 +429,6 @@ namespace estimator {
     return current_pose_estimate_;
   }
 
-  double FactorGraphEstimator::get_angle_diff(double angle1, double angle2) {
-    if((angle1 >= 0 && angle2 >= 0) || (angle1 < 0 && angle2 < 0)) {
-      return angle1 - angle2;
-    } else if(angle1 >= 0 && angle2 < 0) {
-      return angle1 - (2 * M_PI + angle2);
-    } else if(angle1 < 0 && angle2 >= 0) {
-      return (M_PI * 2 + angle1) - angle2;
-    } else {
-      std::cerr << "ERROR: problem in angle diff calc" << std::endl;
-    }
-    return 0;
-  }
-
   /**
    * Takes in a global estimate of pose, finds the difference and accumulates the delta for the factor
    * @param odom_data
@@ -454,33 +442,37 @@ namespace estimator {
 
     pose_message_count_++;
 
-    // TODO this is wrong if we get close to an axis
-    double r,p,y;
-    r = get_angle_diff(odom_data->roll, last_pose_state_.roll);
-    p = get_angle_diff(odom_data->pitch, last_pose_state_.pitch);
-    y = get_angle_diff(odom_data->yaw, last_pose_state_.yaw);
+    Quaternion odom_q = Quaternion(odom_data->qw, odom_data->qx, odom_data->qy, odom_data->qz);
+    odom_q.normalize();
+    Quaternion last_pose_q(last_pose_state_.qw, last_pose_state_.qx, last_pose_state_.qy, last_pose_state_.qz);
+    last_pose_q.normalize();
+    std::cout << "quats" << std::endl;
+    std::cout << "last_pose_state = " << last_pose_state_.qw << ", " << last_pose_state_.qx << ", " << last_pose_state_.qy << ", " << last_pose_state_.qz << std::endl;
+    std::cout << "odom_data_state = " << odom_data->qw << ", " << odom_data->qx << ", " << odom_data->qy << ", " << odom_data->qz << std::endl;
 
-    std::cout << "WHAT??? " << last_pose_state_.x << " " << odom_data->x << " " << std::endl;
+    // find the difference between the two quaternions
+    Rot3 rot_update = traits<Quaternion>::Between(last_pose_q, odom_q);
+    pose_rot_accum_ = pose_rot_accum_ * rot_update;
 
-    Rot3 rot_update = Rot3::Ypr(y, p, r);
+    std::cout << "quat diff = " << pose_rot_accum_ << std::endl;
+
     Point3 trans_update = Point3(odom_data->x - last_pose_state_.x, odom_data->y - last_pose_state_.y,
         odom_data->z - last_pose_state_.z);
-
-    Pose3 pos_update (rot_update, trans_update);
+    pose_trans_accum_ += trans_update;
 
     Vector3 vel_update (odom_data->x_dot - last_pose_state_.x_dot, odom_data->y_dot - last_pose_state_.y_dot,
         odom_data->z_dot - last_pose_state_.z_dot);
     //std::cout << "pose diff " << pos_update << std::endl;
     noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.2));
 
-    pose_change_accum_ = pose_change_accum_ * pos_update;
     vel_change_accum_ += vel_update;
 
     last_pose_state_ = *odom_data;
 
     std::cout << "vel accum  " << vel_change_accum_ << std::endl;
 
-    std::cout << "pose accum " << pose_change_accum_ << std::endl;
+    std::cout << "pose trans accum " << pose_trans_accum_ << std::endl;
+    std::cout << "pose rot accum " << pose_rot_accum_ << std::endl;
   }
 
   void FactorGraphEstimator::add_pose_factor() {
@@ -490,26 +482,36 @@ namespace estimator {
     lock_guard<mutex> graph_lck(graph_lck_);
     lock_guard<mutex> pose_lck(pose_lck_);
     pose_message_count_ = 0;
+    // set up guesses before transforming to body frame for between factor
+    Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
+
+    std::cout << "pose_trans_accum_ = " << pose_trans_accum_ << std::endl;
+    Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
+    gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
+                                              Pose3(new_rot, new_point));
+
+    Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
+    gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_), temp_vel);
+
+
     // add constraint on the poses
+    // transforms the position offset into body frame offset
+    Point3 body_trans = current_position_guess_.transformTo(pose_trans_accum_) + current_position_guess_.translation();
+    std::cout << "pose_trans_accum body frame = " << body_trans << std::endl;
+    // assumes that the pose change is in body frame
     current_incremental_graph_.emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_-1),
-        symbol_shorthand::X(index_), pose_change_accum_, odometry_pose_noise_);
+        symbol_shorthand::X(index_), Pose3(pose_rot_accum_, body_trans), odometry_pose_noise_);
 
     // add constraint on the velocity
     current_incremental_graph_.emplace_shared<BetweenFactor<Vector3>>(symbol_shorthand::V(index_-1),
         symbol_shorthand::V(index_), vel_change_accum_, odometry_vel_noise_);
 
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
-                                              current_position_guess_ * pose_change_accum_);
-    Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_), temp_vel);
     vel_change_accum_ = Vector3(0,0,0);
-    pose_change_accum_ = Pose3(Rot3(), Point3(0,0,0));
+    pose_rot_accum_ = Rot3();
+    pose_trans_accum_ = Point3(0,0,0);
   }
 
   void FactorGraphEstimator::add_factors() {
-    if(debug_) {
-      std::cout << "add_factors called" << std::endl;
-    }
     if(!position_update_) {
       return;
     }
