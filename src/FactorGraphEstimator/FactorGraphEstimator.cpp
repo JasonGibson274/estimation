@@ -269,11 +269,9 @@ namespace estimator {
     current_pose_estimate_.y_dot = current_velocity_guess_[1];
     current_pose_estimate_.z_dot = current_velocity_guess_[2];
 
-    last_optimized_pose_ = current_pose_estimate_;
-
     // clear incremental graph and current guesses
-    //current_incremental_graph_ = NonlinearFactorGraph();
-    //gtsam_current_state_initial_guess_.clear();
+    current_incremental_graph_ = NonlinearFactorGraph();
+    gtsam_current_state_initial_guess_.clear();
 
   }
 
@@ -402,8 +400,6 @@ namespace estimator {
     current_pose_estimate_.y_dot = current_velocity_guess_[1];
     current_pose_estimate_.z_dot = current_velocity_guess_[2];
 
-    //
-    last_optimized_pose_ = current_pose_estimate_;
   }
 
   void FactorGraphEstimator::resetGraph(const std::shared_ptr<drone_state> initial_state) {
@@ -460,23 +456,27 @@ namespace estimator {
 
     // TODO this is wrong if we get close to an axis
     double r,p,y;
-    r = get_angle_diff(odom_data->roll, last_optimized_pose_.roll);
-    p = get_angle_diff(odom_data->pitch, last_optimized_pose_.pitch);
-    y = get_angle_diff(odom_data->yaw, last_optimized_pose_.yaw);
+    r = get_angle_diff(odom_data->roll, last_pose_state_.roll);
+    p = get_angle_diff(odom_data->pitch, last_pose_state_.pitch);
+    y = get_angle_diff(odom_data->yaw, last_pose_state_.yaw);
+
+    std::cout << "WHAT??? " << last_pose_state_.x << " " << odom_data->x << " " << std::endl;
 
     Rot3 rot_update = Rot3::Ypr(y, p, r);
-    Point3 trans_update = Point3(odom_data->x - last_optimized_pose_.x, odom_data->y - last_optimized_pose_.y,
-        odom_data->z - last_optimized_pose_.z);
+    Point3 trans_update = Point3(odom_data->x - last_pose_state_.x, odom_data->y - last_pose_state_.y,
+        odom_data->z - last_pose_state_.z);
 
     Pose3 pos_update (rot_update, trans_update);
 
-    Vector3 vel_update (odom_data->x_dot - last_optimized_pose_.x_dot, odom_data->y_dot - last_optimized_pose_.y_dot,
-        odom_data->z_dot - last_optimized_pose_.z_dot);
+    Vector3 vel_update (odom_data->x_dot - last_pose_state_.x_dot, odom_data->y_dot - last_pose_state_.y_dot,
+        odom_data->z_dot - last_pose_state_.z_dot);
     //std::cout << "pose diff " << pos_update << std::endl;
     noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.2));
 
     pose_change_accum_ = pose_change_accum_ * pos_update;
     vel_change_accum_ += vel_update;
+
+    last_pose_state_ = *odom_data;
 
     std::cout << "vel accum  " << vel_change_accum_ << std::endl;
 

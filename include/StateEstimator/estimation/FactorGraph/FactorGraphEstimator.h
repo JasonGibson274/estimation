@@ -68,7 +68,7 @@ private:
 	gtsam::Pose3 pose_change_accum_;
 	// current diff since last optimization for vel between factor
 	gtsam::Vector3 vel_change_accum_;
-	drone_state last_optimized_pose_;
+  drone_state last_pose_state_;
 
 	// ========= GRAPH GENERICS ===========
 	// current graph that gets updated and cleared after each optimization
