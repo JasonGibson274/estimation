@@ -414,7 +414,13 @@ namespace estimator {
     imu_meas_count_ = 0;
     current_incremental_graph_ = NonlinearFactorGraph();
     preintegrator_imu_.resetIntegration();
-    isam_.clear();
+    ISAM2Params isam_parameters;
+    isam_parameters.relinearizeThreshold = 0.01;
+    isam_parameters.relinearizeSkip = 1;
+    isam_parameters.cacheLinearizedFactors = false;
+    isam_parameters.enableDetailedResults = true;
+    isam_parameters.print();
+    isam_ = ISAM2(isam_parameters);
 
     // reset up priors
     add_priors(initial_state);
@@ -481,16 +487,21 @@ namespace estimator {
     lock_guard<mutex> graph_lck(graph_lck_);
     lock_guard<mutex> pose_lck(pose_lck_);
     pose_message_count_ = 0;
-    // set up guesses before transforming to body frame for between factor
-    Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
 
-    std::cout << "pose_trans_accum_ = " << pose_trans_accum_ << std::endl;
-    Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
+    // set up the state guesses from odometry if imu is turned off
+    if(!use_imu_factors_) {
+      // set up guesses before transforming to body frame for between factor
+      Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
+
+      std::cout << "pose_trans_accum_ = " << pose_trans_accum_ << std::endl;
+      Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
+      gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
                                               Pose3(new_rot, new_point));
 
-    Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_), temp_vel);
+      Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
+      gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_), temp_vel);
+    }
+
 
 
     // add constraint on the poses

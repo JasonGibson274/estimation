@@ -46,6 +46,7 @@ int main() {
   estimator.callback_cm(camera_reading);
 
   drone_state result = estimator.latest_state();
+  estimator.resetGraph(init_state);
 
   std::cout << "\nstarting odom callback\n" << std::endl;
   reading_odom->x = 0;
