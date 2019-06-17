@@ -21,6 +21,7 @@ namespace estimator {
 
     // init camera to flightgoggles default, TODO have correct estimate
     K_ = boost::make_shared<gtsam::Cal3_S2>(548.4088134765625, 548.4088134765625, 0, 512.0, 384.0);
+    camera_transform_ = Pose3(Rot3::Quaternion(-0.5, 0.5, -0.5, 0.5), Point3(0,0,0));
 
     // setup IMU preintegrator parameters
     boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedU(9.81);
@@ -190,9 +191,9 @@ namespace estimator {
 
       // New Landmark - Add a new Factor
       if (landmark_factor_it == landmark_factors_.end()) {
-        SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor(new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K_));
+        SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor(new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K_, camera_transform_));
         landmark_factors_[l_id] = smartFactor;
-        //current_incremental_graph_.push_back(smartFactor);
+        current_incremental_graph_.push_back(smartFactor);
       }
       // Translate detection into gtsam
       Point2 detection_coords(im_coords.first, im_coords.second);

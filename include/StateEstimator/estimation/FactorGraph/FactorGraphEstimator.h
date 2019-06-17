@@ -55,8 +55,10 @@ private:
   bool debug_ = true;
   // if any thing has updated the estimate of position
   bool position_update_ = false;
-  bool use_pose_factors_ = false;
-  bool use_imu_factors_ = true;
+
+  // flags to determine if factors are used
+  bool use_pose_factors_ = true;
+  bool use_imu_factors_ = false;
   bool use_camera_factors_ = true;
   bool use_range_factors_ = false;
 
@@ -98,6 +100,7 @@ private:
 	// keeps track of the projection factors for each landmark
 	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> landmark_factors_;
   boost::shared_ptr<gtsam::Cal3_S2> K_;
+  gtsam::Pose3 camera_transform_;
 
   // ========== IMU ===========================
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
