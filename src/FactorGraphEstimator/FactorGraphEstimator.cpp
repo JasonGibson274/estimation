@@ -23,7 +23,7 @@ namespace estimator {
     K_ = boost::make_shared<gtsam::Cal3_S2>(548.4088134765625, 548.4088134765625, 0, 512.0, 384.0);
 
     // setup IMU preintegrator parameters
-    boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedD(0.0);
+    boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedU(9.81);
     double accel_noise_sigma = 2.0;
     double gyro_noise_sigma = 0.1;
     double accel_bias_rw_sigma = 0.1;
@@ -83,10 +83,15 @@ namespace estimator {
       return;
     }
     position_update_ = true;
+    // -1 if invert, 1 if !invert
+    double invert_x = invert_x_ ? -1.0 : 1.0;
+    double invert_y = invert_y_ ? -1.0 : 1.0;
+    double invert_z = invert_z_ ? -1.0 : 1.0;
+
     // updates the current guesses of position
-    Vector3 accel = Vector3 (imu_data->x_accel, imu_data->y_accel, imu_data->z_accel);
-    // TODO check order
-    Vector3 ang_rate = Vector3 (imu_data->roll_vel, imu_data->pitch_vel, imu_data->yaw_vel);
+    Vector3 accel = Vector3 (imu_data->x_accel * invert_x, imu_data->y_accel * invert_y, imu_data->z_accel * invert_z);
+    Vector3 ang_rate = Vector3 (imu_data->roll_vel * invert_x, imu_data->pitch_vel * invert_y, imu_data->yaw_vel * invert_z);
+    std::cout << "imu z  = " << imu_data->z_accel << std::endl;
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
     preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data->dt);
     imu_meas_count_++;
@@ -116,7 +121,6 @@ namespace estimator {
       Symbol b2 = symbol_shorthand::B(bias_index_);
 
       // Motion model of bias - currently constant bias is assumed
-      // TODO
 
       // Add factor to graph and add initial variable guesses
       lock_guard<mutex> lck(graph_lck_);
@@ -244,6 +248,8 @@ namespace estimator {
     current_velocity_guess_ = isam_.calculateEstimate<Vector3>(symbol_shorthand::V(index_));
     if(use_imu_factors_) {
       current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_));
+      // print bias
+      std::cout << "bias = " << current_bias_guess_ << std::endl;
     }
 
     if(debug_) {
@@ -292,9 +298,9 @@ namespace estimator {
     current_state.y_dot = current_velocity_guess_[1];
     current_state.z_dot = current_velocity_guess_[2];
 
-    double roll = current_position_guess_.rotation().rpy()[0];
+    double roll = current_position_guess_.rotation().rpy()[2];
     double pitch = current_position_guess_.rotation().rpy()[1];
-    double yaw = current_position_guess_.rotation().rpy()[2];
+    double yaw = current_position_guess_.rotation().rpy()[0];
 
     //Update angular rate
     result.roll_dot = angular_vel[0];
@@ -348,7 +354,6 @@ namespace estimator {
   void FactorGraphEstimator::add_priors(const std::shared_ptr<drone_state> initial_state) {
     current_position_guess_ = Pose3(Rot3::Quaternion(initial_state->qw, initial_state->qx, initial_state->qy, initial_state->qz),
             Point3(initial_state->x,initial_state->y,initial_state->z));
-    std::cout << "initial position guess " << std::endl;
     current_position_guess_.print();
     current_velocity_guess_ = Vector3(initial_state->x_dot, initial_state->y_dot, initial_state->z_dot);
     Vector6 bias_tmp;
@@ -442,7 +447,10 @@ namespace estimator {
     if(!use_pose_factors_) {
       return;
     }
-    position_update_ = true;
+    // otherwise you can have a between factor of two states that do not exist
+    if(!use_imu_factors_) {
+      position_update_ = true;
+    }
     lock_guard<mutex> pose_lck(pose_lck_);
 
     pose_message_count_++;
@@ -451,15 +459,10 @@ namespace estimator {
     odom_q.normalize();
     Quaternion last_pose_q(last_pose_state_.qw, last_pose_state_.qx, last_pose_state_.qy, last_pose_state_.qz);
     last_pose_q.normalize();
-    std::cout << "quats" << std::endl;
-    std::cout << "last_pose_state = " << last_pose_state_.qw << ", " << last_pose_state_.qx << ", " << last_pose_state_.qy << ", " << last_pose_state_.qz << std::endl;
-    std::cout << "odom_data_state = " << odom_data->qw << ", " << odom_data->qx << ", " << odom_data->qy << ", " << odom_data->qz << std::endl;
 
     // find the difference between the two quaternions
     Rot3 rot_update = traits<Quaternion>::Between(last_pose_q, odom_q);
     pose_rot_accum_ = pose_rot_accum_ * rot_update;
-
-    std::cout << "quat diff = " << pose_rot_accum_ << std::endl;
 
     Point3 trans_update = Point3(odom_data->x - last_pose_state_.x, odom_data->y - last_pose_state_.y,
         odom_data->z - last_pose_state_.z);
@@ -474,10 +477,6 @@ namespace estimator {
 
     last_pose_state_ = *odom_data;
 
-    std::cout << "vel accum  " << vel_change_accum_ << std::endl;
-
-    std::cout << "pose trans accum " << pose_trans_accum_ << std::endl;
-    std::cout << "pose rot accum " << pose_rot_accum_ << std::endl;
   }
 
   void FactorGraphEstimator::add_pose_factor() {
@@ -493,7 +492,6 @@ namespace estimator {
       // set up guesses before transforming to body frame for between factor
       Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
 
-      std::cout << "pose_trans_accum_ = " << pose_trans_accum_ << std::endl;
       Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
       gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
                                               Pose3(new_rot, new_point));
@@ -507,7 +505,7 @@ namespace estimator {
     // add constraint on the poses
     // transforms the position offset into body frame offset
     Point3 body_trans = current_position_guess_.transformTo(pose_trans_accum_ + current_position_guess_.translation());
-    std::cout << "pose_trans_accum body frame = " << body_trans << std::endl;
+
     // assumes that the pose change is in body frame
     current_incremental_graph_.emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_-1),
         symbol_shorthand::X(index_), Pose3(pose_rot_accum_, body_trans), odometry_pose_noise_);

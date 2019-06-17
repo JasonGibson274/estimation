@@ -55,8 +55,8 @@ private:
   bool debug_ = true;
   // if any thing has updated the estimate of position
   bool position_update_ = false;
-  bool use_pose_factors_ = true;
-  bool use_imu_factors_ = false;
+  bool use_pose_factors_ = false;
+  bool use_imu_factors_ = true;
   bool use_camera_factors_ = true;
   bool use_range_factors_ = false;
 
@@ -84,7 +84,7 @@ private:
   int index_ = 0;
   // index of IMU bias, increments differently based on imu_bias_incr_
 	int bias_index_ = 0;
-	int imu_bias_incr_ = 5;
+	int imu_bias_incr_ = 10;
 
 	// Current estimate of the state to be passed into factor graph
 	gtsam::Pose3 current_position_guess_;
@@ -103,6 +103,9 @@ private:
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
 	// the number of IMU messages currently integrated
 	int imu_meas_count_ = 0;
+	bool invert_x_ = true;
+  bool invert_y_ = true;
+  bool invert_z_ = true;
 
 	// ============ NOISE ============
 	// Add the NoiseModels for IMU and Camera and RangeFinder
