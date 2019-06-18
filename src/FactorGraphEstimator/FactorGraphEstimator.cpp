@@ -24,7 +24,7 @@ namespace estimator {
     camera_transform_ = Pose3(Rot3::Quaternion(-0.5, 0.5, -0.5, 0.5), Point3(0,0,0));
 
     // setup IMU preintegrator parameters
-    boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedU(9.81);
+    boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedU(GRAVITY);
     double accel_noise_sigma = 2.0;
     double gyro_noise_sigma = 0.1;
     double accel_bias_rw_sigma = 0.1;
@@ -92,7 +92,6 @@ namespace estimator {
     // updates the current guesses of position
     Vector3 accel = Vector3 (imu_data->x_accel * invert_x, imu_data->y_accel * invert_y, imu_data->z_accel * invert_z);
     Vector3 ang_rate = Vector3 (imu_data->roll_vel * invert_x, imu_data->pitch_vel * invert_y, imu_data->yaw_vel * invert_z);
-    std::cout << "imu z  = " << imu_data->z_accel << std::endl;
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
     preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data->dt);
     imu_meas_count_++;
@@ -170,9 +169,7 @@ namespace estimator {
    */
   void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pair<double, double>>>
                                          landmark_data) {
-    if(!use_camera_factors_) {
-      return;
-    }
+
     // TODO verify that the landmark data is in the camera FOV
 
     // if there is no position updates this is unconstrained
@@ -183,6 +180,10 @@ namespace estimator {
     }
     // Create newest state
     add_factors();
+
+    if(!use_camera_factors_) {
+      return;
+    }
     for (const auto& seen_landmark : *landmark_data) {
       //std::cout << "adding landmark detection " << seen_landmark.first << ", " << seen_landmark.second.first << ", " << seen_landmark.second.second << std::endl;
       std::string l_id = seen_landmark.first;
@@ -235,8 +236,8 @@ namespace estimator {
 
     //NonlinearFactorGraph isam_graph = current_incremental_graph_.clone();
     if(debug_) {
-      std::cout << "\n\n incremental graph" << std::endl;
-      current_incremental_graph_.print();
+      //std::cout << "\n\n incremental graph" << std::endl;
+      //current_incremental_graph_.print();
       std::cout << "\n\n guess state guesses" << std::endl;
       gtsam_current_state_initial_guess_.print();
     }
@@ -289,29 +290,47 @@ namespace estimator {
    */
    // TODO clean up method
   void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, double dt) {
-    drone_state result, current_state;
+    //TODO fix IMU motion model to match what is happening in real life
+    drone_state result;
 
-    current_state.x = current_position_guess_.x();
-    current_state.y = current_position_guess_.y();
-    current_state.z = current_position_guess_.z();
+    double x = current_position_guess_.x();
+    double y = current_position_guess_.y();
+    double z = current_position_guess_.z();
 
-    current_state.x_dot = current_velocity_guess_[0];
-    current_state.y_dot = current_velocity_guess_[1];
-    current_state.z_dot = current_velocity_guess_[2];
+    double x_dot = current_velocity_guess_[0];
+    double y_dot = current_velocity_guess_[1];
+    double z_dot = current_velocity_guess_[2];
 
-    double roll = current_position_guess_.rotation().rpy()[2];
+    double roll = current_position_guess_.rotation().rpy()[0];
     double pitch = current_position_guess_.rotation().rpy()[1];
-    double yaw = current_position_guess_.rotation().rpy()[0];
+    double yaw = current_position_guess_.rotation().rpy()[2];
+
+    double roll_dot = angular_vel[0];
+    double pitch_dot = angular_vel[1];
+    double yaw_dot = angular_vel[2];
+
+    if(debug_) {
+      std::cout.precision(10);
+      std::cout << "===== prop =====" << std::endl;
+      std::cout << "dt = " << dt << std::endl;
+      std::cout << "ang rate before = " << roll_dot << ", " << pitch_dot << ", " << yaw_dot << std::endl;
+      std::cout << "acc beore = " << acc[0] << ", " << acc[1] << ", " << acc[2] << std::endl;
+      std::cout << "=====" << std::endl;
+
+      std::cout << "pos before = " << x << ", " << y << ", " << z << std::endl;
+      std::cout << "rpy before = " << roll << ", " << pitch << ", " << yaw << std::endl;
+      std::cout << "vel before = " << x_dot << ", " << y_dot << ", " << z_dot << std::endl;
+    }
 
     //Update angular rate
-    result.roll_dot = angular_vel[0];
-    result.pitch_dot = angular_vel[1];
-    result.pitch_dot = angular_vel[2];
+    result.roll_dot = roll_dot;
+    result.pitch_dot = pitch_dot;
+    result.yaw_dot = yaw_dot;
 
     //Position update
-    result.x = current_state.x + current_state.x_dot*dt;
-    result.y = current_state.y + current_state.y_dot*dt;
-    result.z = current_state.z + current_state.z_dot*dt;
+    result.x = x + x_dot*dt + 0.5*acc[0]*pow(dt, 2);
+    result.y = y + y_dot*dt + 0.5*acc[1]*pow(dt, 2);
+    result.z = z + z_dot*dt;// + 0.5*acc[2]*pow(dt, 2);
 
     //Update velocity
     float c_phi, c_theta, c_psi, s_phi, s_theta, s_psi;
@@ -325,24 +344,30 @@ namespace estimator {
     ux = acc[0]*dt;
     uy = acc[1]*dt;
     uz = acc[2]*dt;
-    result.x_dot = current_state.x_dot + (c_theta*c_psi)*ux + (s_phi*s_theta*c_psi - c_phi*s_psi)*uy + (c_phi*s_theta*c_psi + s_phi*s_psi)*uz;
-    result.y_dot = current_state.y_dot + (c_theta*s_psi)*ux + (s_phi*s_theta*s_psi + c_phi*c_psi)*uy + (c_phi*s_theta*s_psi - s_phi*c_psi)*uz;
-    result.z_dot = current_state.z_dot + (-s_theta)*ux + (c_theta*s_phi)*uy + (c_theta*c_phi)*uz - 9.81*dt;
+    result.x_dot = x_dot + (c_theta*c_psi)*ux + (s_phi*s_theta*c_psi - c_phi*s_psi)*uy + (c_phi*s_theta*c_psi + s_phi*s_psi)*uz;
+    result.y_dot = y_dot + (c_theta*s_psi)*ux + (s_phi*s_theta*s_psi + c_phi*c_psi)*uy + (c_phi*s_theta*s_psi - s_phi*c_psi)*uz;
+    result.z_dot = z_dot + (-s_theta)*ux + (c_theta*s_phi)*uy + (c_theta*c_phi)*uz - GRAVITY*dt;
 
     //Update the euler angles
-    float r, p, y;
-    r = roll + (current_state.roll_dot + (s_phi*s_theta/c_theta)*current_state.pitch_dot + (c_phi*s_theta/c_theta)*current_state.yaw_dot)*dt;
-    p = pitch + (c_phi*current_state.pitch_dot - s_phi*current_state.yaw_dot)*dt;
-    y = yaw + (s_phi/c_theta*current_state.pitch_dot + c_phi/c_theta*current_state.yaw_dot)*dt;
+    float r_result, p_result, y_result;
+    r_result = roll + (roll_dot + (s_phi*s_theta/c_theta)*pitch_dot + (c_phi*s_theta/c_theta)*yaw_dot)*dt;
+    p_result = pitch + (c_phi*pitch_dot - s_phi*yaw_dot)*dt;
+    y_result = yaw + (s_phi/c_theta*pitch_dot + c_phi/c_theta*yaw_dot)*dt;
 
     // apply the update
     // the ordering is correct for gtsam
     //std::cout << "\n\n vel before: \n" << *current_velocity_guess_ << std::endl;
 
-    current_position_guess_ = Pose3(Rot3::Ypr(y, p, r),
+    current_position_guess_ = Pose3(Rot3::Ypr(y_result, p_result, r_result),
             Point3(result.x, result.y, result.z));
     current_velocity_guess_ = Vector3(result.x_dot, result.y_dot, result.z_dot);
     //std::cout << "\n\n vel after: \n" << *current_velocity_guess_ << std::endl;
+    if(debug_) {
+      std::cout << "===== after ====" << std::endl;
+      std::cout << "pos after = " << result.x << ", " << result.y << ", " << result.z << std::endl;
+      std::cout << "rpy after = " << r_result << ", " << p_result << ", " << y_result << std::endl;
+      std::cout << "vel after = " << result.x_dot << ", " << result.y_dot << ", " << result.z_dot << std::endl;
+    }
   }
 
   void FactorGraphEstimator::callback_range(int rangestuff) {

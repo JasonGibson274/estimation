@@ -58,9 +58,10 @@ private:
 
   // flags to determine if factors are used
   bool use_pose_factors_ = true;
-  bool use_imu_factors_ = false;
-  bool use_camera_factors_ = true;
+  bool use_imu_factors_ = true;
   bool use_range_factors_ = false;
+  // work differently TODO document
+  bool use_camera_factors_ = true;
 
   int previous_optimization_index_ = 0;
 
@@ -106,9 +107,10 @@ private:
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
 	// the number of IMU messages currently integrated
 	int imu_meas_count_ = 0;
-	bool invert_x_ = true;
-  bool invert_y_ = true;
-  bool invert_z_ = true;
+	bool invert_x_ = false;
+  bool invert_y_ = false;
+  bool invert_z_ = false;
+  const double GRAVITY = 9.81;
 
 	// ============ NOISE ============
 	// Add the NoiseModels for IMU and Camera and RangeFinder

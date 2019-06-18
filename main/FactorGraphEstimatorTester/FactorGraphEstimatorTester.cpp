@@ -33,12 +33,13 @@ int main() {
   std::cout << "\nstarting imu callback\n" << std::endl;
   std::shared_ptr<IMU_readings> reading_imu = std::make_shared<IMU_readings>();
   reading_imu->dt = 1.0;
-  reading_imu->x_accel = 0.0;
-  reading_imu->y_accel = 0.0;
-  reading_imu->z_accel = -9.81;
+  reading_imu->x_accel = 1.0;
+  reading_imu->y_accel = 1.0;
+  reading_imu->z_accel = 9.81;
   reading_imu->roll_vel = 0.0;
   reading_imu->pitch_vel = 0.0;
-  reading_imu->yaw_vel = -0.00;
+  reading_imu->yaw_vel = 0.0;
+  estimator.callback_imu(reading_imu);
   estimator.callback_imu(reading_imu);
   std::cout << "\nending imu callback\n" << std::endl;
 
@@ -50,18 +51,23 @@ int main() {
   estimator.callback_cm(camera_reading);
 
   drone_state result = estimator.latest_state();
-  /*estimator.resetGraph(init_state);
 
+  /*
   std::cout << "\nstarting odom callback\n" << std::endl;
   reading_odom->x = 0;
   estimator.callback_odometry(reading_odom);
   std::cout << "\nodom callback ended\n" << std::endl;
 
+  std::cout << "\nstarting imu callback\n" << std::endl;
+  estimator.callback_imu(reading_imu);
+  std::cout << "\nending imu callback\n" << std::endl;
+
   std::cout << "\nstarting camera callback\n" << std::endl;
   estimator.callback_cm(camera_reading);
 
-  result = estimator.latest_state();*/
+  result = estimator.latest_state();
   std::cout << "\n\nfinished code\n\n" << std::endl;
+   */
   /*
   NonlinearFactorGraph current_incremental_graph_;
   // Values initialStateEstimate;
