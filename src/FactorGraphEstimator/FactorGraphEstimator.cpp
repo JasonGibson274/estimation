@@ -384,13 +384,11 @@ namespace estimator {
   void FactorGraphEstimator::add_priors(const std::shared_ptr<drone_state> initial_state) {
     current_position_guess_ = Pose3(Rot3::Quaternion(initial_state->qw, initial_state->qx, initial_state->qy, initial_state->qz),
             Point3(initial_state->x,initial_state->y,initial_state->z));
-    current_position_guess_.print();
     current_velocity_guess_ = Vector3(initial_state->x_dot, initial_state->y_dot, initial_state->z_dot);
     Vector6 bias_tmp;
     bias_tmp << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     std::cout << "bias temp = " << current_bias_guess_ << std::endl;
     current_bias_guess_ = imuBias::ConstantBias(bias_tmp);
-    gtsam_current_state_initial_guess_.clear();
 
     // insert initial guesses of state
     gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
@@ -401,10 +399,6 @@ namespace estimator {
       gtsam_current_state_initial_guess_.insert(symbol_shorthand::B(bias_index_),
                                               current_bias_guess_);
     }
-
-
-    //gtsam_current_state_initial_guess_->print();
-
     // create priors on the state
 
     // Assemble prior noise model and add it the graph.
@@ -442,6 +436,7 @@ namespace estimator {
 
     last_pose_state_ = current_pose_estimate_;
 
+    run_optimize();
   }
 
   void FactorGraphEstimator::resetGraph(const std::shared_ptr<drone_state> initial_state) {
@@ -455,6 +450,7 @@ namespace estimator {
     pose_message_count_ = 0;
     imu_meas_count_ = 0;
     current_incremental_graph_ = NonlinearFactorGraph();
+    gtsam_current_state_initial_guess_.clear();
     preintegrator_imu_.resetIntegration();
     ISAM2Params isam_parameters;
     isam_parameters.relinearizeThreshold = 0.01;
