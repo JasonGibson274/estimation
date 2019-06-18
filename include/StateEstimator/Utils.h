@@ -35,9 +35,10 @@ struct drone_state
   double x = 0.0;
   double y = 0.0;
   double z = 0.0;
-  double roll = 0.0;
-  double pitch = 0.0;
-  double yaw = 0.0;
+  double qx = 0.0;
+  double qy = 0.0;
+  double qz = 0.0;
+  double qw = 0.0;
   double x_dot = 0.0;
   double y_dot = 0.0;
   double z_dot = 0.0;

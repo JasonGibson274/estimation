@@ -6,10 +6,12 @@ Authors: Bogdan Vlahov and Jason Gibson
 #define FactorGraphEstimator_H_
 
 #include <gtsam/geometry/SimpleCamera.h>
+#include <gtsam/geometry/Quaternion.h>
 #include <gtsam/navigation/ImuBias.h>
 #include <gtsam/navigation/ImuFactor.h>
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
+#include <gtsam/slam/SmartProjectionPoseFactor.h>
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
 
 #include <StateEstimator/Utils.h>
@@ -36,6 +38,8 @@ public:
 
   virtual void resetGraph(std::shared_ptr<drone_state> state);
 
+  virtual std::vector<std::array<double, 3>> get_landmark_positions();
+
   virtual void run_optimize();
 
   drone_state latest_state() override;
@@ -46,24 +50,30 @@ private:
 	virtual void add_priors(std::shared_ptr<drone_state> initial_state);
 	virtual void add_factors();
   void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
-  double get_angle_diff(double angle1, double angle2);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
+  // if any thing has updated the estimate of position
   bool position_update_ = false;
+
+  // flags to determine if factors are used
   bool use_pose_factors_ = true;
   bool use_imu_factors_ = true;
-  bool use_camera_factors_ = true;
   bool use_range_factors_ = false;
+  // work differently TODO document
+  bool use_camera_factors_ = true;
+
+  int previous_optimization_index_ = 0;
 
   // ========= POSE FACTOR HELPERS =========
   // number of pose messages
   int pose_message_count_ = 0;
 	// current diff since last optimization for Pose3 between factor
-	gtsam::Pose3 pose_change_accum_;
+	gtsam::Rot3 pose_rot_accum_;
+	gtsam::Point3 pose_trans_accum_;
 	// current diff since last optimization for vel between factor
 	gtsam::Vector3 vel_change_accum_;
-	drone_state last_optimized_pose_;
+  drone_state last_pose_state_;
 
 	// ========= GRAPH GENERICS ===========
 	// current graph that gets updated and cleared after each optimization
@@ -77,7 +87,7 @@ private:
   int index_ = 0;
   // index of IMU bias, increments differently based on imu_bias_incr_
 	int bias_index_ = 0;
-	int imu_bias_incr_ = 5;
+	int imu_bias_incr_ = 1;
 
 	// Current estimate of the state to be passed into factor graph
 	gtsam::Pose3 current_position_guess_;
@@ -89,13 +99,18 @@ private:
 
 	// ========== PROJECTION FACTOR =============
 	// keeps track of the projection factors for each landmark
-	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>*> landmark_factors_;
+	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> landmark_factors_;
   boost::shared_ptr<gtsam::Cal3_S2> K_;
+  gtsam::Pose3 camera_transform_;
 
   // ========== IMU ===========================
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
 	// the number of IMU messages currently integrated
 	int imu_meas_count_ = 0;
+	bool invert_x_ = false;
+  bool invert_y_ = false;
+  bool invert_z_ = false;
+  const double GRAVITY = 9.81;
 
 	// ============ NOISE ============
 	// Add the NoiseModels for IMU and Camera and RangeFinder
