@@ -87,7 +87,7 @@ private:
   int index_ = 0;
   // index of IMU bias, increments differently based on imu_bias_incr_
 	int bias_index_ = 0;
-	int imu_bias_incr_ = 10;
+	int imu_bias_incr_ = 1;
 
 	// Current estimate of the state to be passed into factor graph
 	gtsam::Pose3 current_position_guess_;

@@ -62,13 +62,17 @@ namespace estimator {
 
     Vector6 covvec;
     covvec << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
+    std::cout << "bias noise = " << covvec << std::endl;
     bias_noise_ = noiseModel::Diagonal::Variances(covvec);
 
     // pose factor noise
-    odometry_vel_noise_ = noiseModel::Diagonal::Sigmas(Vector3(0.1, 0.1, 0.1));
+    Vector3 odom_vel_noise = Vector3(0.1,0.1,0.1);
+    std::cout << "odom vel noise = " << odom_vel_noise << std::endl;
+    odometry_vel_noise_ = noiseModel::Diagonal::Sigmas(odom_vel_noise);
     Vector6 pose_noise;
     pose_noise << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
-    odometry_pose_noise_ = noiseModel::Diagonal::Sigmas(Vector6(pose_noise));
+    std::cout << "pose noise = " << pose_noise << std::endl;
+    odometry_pose_noise_ = noiseModel::Diagonal::Sigmas(pose_noise);
 
     // add the priors on state
     add_priors(initial_state);
@@ -236,8 +240,8 @@ namespace estimator {
 
     //NonlinearFactorGraph isam_graph = current_incremental_graph_.clone();
     if(debug_) {
-      //std::cout << "\n\n incremental graph" << std::endl;
-      //current_incremental_graph_.print();
+      std::cout << "\n\n incremental graph" << std::endl;
+      current_incremental_graph_.print();
       std::cout << "\n\n guess state guesses" << std::endl;
       gtsam_current_state_initial_guess_.print();
     }
@@ -384,6 +388,7 @@ namespace estimator {
     current_velocity_guess_ = Vector3(initial_state->x_dot, initial_state->y_dot, initial_state->z_dot);
     Vector6 bias_tmp;
     bias_tmp << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+    std::cout << "bias temp = " << current_bias_guess_ << std::endl;
     current_bias_guess_ = imuBias::ConstantBias(bias_tmp);
     gtsam_current_state_initial_guess_.clear();
 
@@ -405,8 +410,14 @@ namespace estimator {
     // Assemble prior noise model and add it the graph.
     noiseModel::Diagonal::shared_ptr pose_noise_model = noiseModel::Diagonal::Sigmas((Vector(6)
             << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1).finished()); // rad,rad,rad,m, m, m
+    std::cout << "\npose noise prior pointer = " << std::endl;
+    std::cout << pose_noise_model->sigmas();
     noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3,0.1); // m/s
+    std::cout << "\nvel prior pointer = " << std::endl;
+    std::cout << velocity_noise_model->sigmas();
     noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Isotropic::Sigma(6,1e-3);
+    std::cout << "\nbias_noise_model prior = " << std::endl;
+    std::cout << bias_noise_model->sigmas();
 
     // priors match initial guess
     current_incremental_graph_.add(PriorFactor<Pose3>(symbol_shorthand::X(index_), current_position_guess_, pose_noise_model));
