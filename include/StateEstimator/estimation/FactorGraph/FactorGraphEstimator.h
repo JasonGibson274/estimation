@@ -26,17 +26,24 @@ Authors: Bogdan Vlahov and Jason Gibson
 // TODO make callbacks pass by const reference to shared pointer
 namespace alphapilot {
 namespace estimator {
+  struct gtsam_camera {
+    gtsam::Pose3 transform;
+    boost::shared_ptr<gtsam::Cal3_S2> K;
+  };
+
+
 class FactorGraphEstimator : Estimator {
 public:
   FactorGraphEstimator(const std::shared_ptr<drone_state>& initial_state, bool debug);
 
-  virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data);
+  virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data, std::string camera_name);
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(const int rangestuff);
   virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);
   virtual void callback_odometry(const std::shared_ptr<drone_state> odom_data);
-
   virtual void resetGraph(std::shared_ptr<drone_state> state);
+  virtual void register_camera(const std::string name, const std::shared_ptr<transform> transform, const std::shared_ptr<camera_info> camera_info);
+  virtual double get_optimization_time();
 
   virtual std::vector<std::array<double, 3>> get_landmark_positions();
 
@@ -56,9 +63,12 @@ private:
   // if any thing has updated the estimate of position
   bool position_update_ = false;
 
+  // how long the most recent optimization took
+  double optimization_time_ = 0.0;
+
   // flags to determine if factors are used
   bool use_pose_factors_ = true;
-  bool use_imu_factors_ = true;
+  bool use_imu_factors_ = false;
   bool use_range_factors_ = false;
   // work differently TODO document
   bool use_camera_factors_ = true;
@@ -100,8 +110,7 @@ private:
 	// ========== PROJECTION FACTOR =============
 	// keeps track of the projection factors for each landmark
 	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> landmark_factors_;
-  boost::shared_ptr<gtsam::Cal3_S2> K_;
-  gtsam::Pose3 camera_transform_;
+	std::map<std::string, gtsam_camera> camera_map;
 
   // ========== IMU ===========================
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;

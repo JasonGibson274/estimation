@@ -57,5 +57,15 @@ struct camera_info {
  double u0 = 0.0;
  double v0 = 0.0;
 };
+
+struct transform {
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+  double qx = 0.0;
+  double qy = 0.0;
+  double qz = 0.0;
+  double qw = 0.0;
+};
 } // alphapilot
 #endif // UTILS_MSGS_H_

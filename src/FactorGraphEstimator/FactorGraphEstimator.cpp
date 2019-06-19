@@ -20,8 +20,6 @@ namespace estimator {
     vel_change_accum_ = Vector3(0,0,0);
 
     // init camera to flightgoggles default, TODO have correct estimate
-    K_ = boost::make_shared<gtsam::Cal3_S2>(548.4088134765625, 548.4088134765625, 0, 512.0, 384.0);
-    camera_transform_ = Pose3(Rot3::Quaternion(-0.5, 0.5, -0.5, 0.5), Point3(0,0,0));
 
     // setup IMU preintegrator parameters
     boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedU(GRAVITY);
@@ -53,7 +51,6 @@ namespace estimator {
     isam_parameters.relinearizeSkip = 1;
     isam_parameters.cacheLinearizedFactors = false;
     isam_parameters.enableDetailedResults = true;
-    isam_parameters.print();
     isam_ = ISAM2(isam_parameters);
 
     // Initialize Noise Models
@@ -172,7 +169,7 @@ namespace estimator {
    * @param map<landmark_id, uv_coords> landmark_data
    */
   void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pair<double, double>>>
-                                         landmark_data) {
+                                         landmark_data, std::string camera_name) {
 
     // TODO verify that the landmark data is in the camera FOV
 
@@ -181,6 +178,9 @@ namespace estimator {
       std::cerr << "ERROR: no position updates have happened but camera was recieved\n" <<
                    "Not optimizing otherwise unconstrained optimization" << std::endl;
       return;
+    }
+    if(camera_map.find(camera_name) == camera_map.end()) {
+      std::cout << "ERROR using invalid camera name " << camera_name << " make sure to register a camera first" << std::endl;
     }
     // Create newest state
     add_factors();
@@ -196,7 +196,8 @@ namespace estimator {
 
       // New Landmark - Add a new Factor
       if (landmark_factor_it == landmark_factors_.end()) {
-        SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor(new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, K_, camera_transform_));
+        gtsam_camera camera = camera_map[camera_name];
+        SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor(new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, camera.K, camera.transform));
         landmark_factors_[l_id] = smartFactor;
         current_incremental_graph_.push_back(smartFactor);
       }
@@ -241,13 +242,20 @@ namespace estimator {
     //NonlinearFactorGraph isam_graph = current_incremental_graph_.clone();
     if(debug_) {
       std::cout << "\n\n incremental graph" << std::endl;
+      //current_incremental_graph_.printErrors(gtsam_current_state_initial_guess_);
       current_incremental_graph_.print();
       std::cout << "\n\n guess state guesses" << std::endl;
       gtsam_current_state_initial_guess_.print();
     }
 
+    auto start = std::chrono::steady_clock::now();
+
     // run update and run optimization
     isam_.update(current_incremental_graph_, gtsam_current_state_initial_guess_);
+
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> diff = end-start;
+    optimization_time_ = diff.count();
 
     // set the guesses of state to the correct output
     current_position_guess_ = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(index_));
@@ -255,7 +263,9 @@ namespace estimator {
     if(use_imu_factors_) {
       current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_));
       // print bias
-      std::cout << "bias = " << current_bias_guess_ << std::endl;
+      if(debug_) {
+        std::cout << "bias = " << current_bias_guess_ << std::endl;
+      }
     }
 
     if(debug_) {
@@ -440,25 +450,26 @@ namespace estimator {
   }
 
   void FactorGraphEstimator::resetGraph(const std::shared_ptr<drone_state> initial_state) {
-    lock_guard<mutex> graph_lck(graph_lck_);
-    lock_guard<mutex> preintegration_lck(preintegrator_lck_);
-    lock_guard<mutex> pose_lck(pose_lck_);
+    {
+      lock_guard<mutex> graph_lck(graph_lck_);
+      lock_guard<mutex> preintegration_lck(preintegrator_lck_);
+      lock_guard<mutex> pose_lck(pose_lck_);
 
-    //clear
-    index_ = 0;
-    bias_index_ = 0;
-    pose_message_count_ = 0;
-    imu_meas_count_ = 0;
-    current_incremental_graph_ = NonlinearFactorGraph();
-    gtsam_current_state_initial_guess_.clear();
-    preintegrator_imu_.resetIntegration();
-    ISAM2Params isam_parameters;
-    isam_parameters.relinearizeThreshold = 0.01;
-    isam_parameters.relinearizeSkip = 1;
-    isam_parameters.cacheLinearizedFactors = false;
-    isam_parameters.enableDetailedResults = true;
-    isam_parameters.print();
-    isam_ = ISAM2(isam_parameters);
+      //clear
+      index_ = 0;
+      bias_index_ = 0;
+      pose_message_count_ = 0;
+      imu_meas_count_ = 0;
+      current_incremental_graph_ = NonlinearFactorGraph();
+      gtsam_current_state_initial_guess_.clear();
+      preintegrator_imu_.resetIntegration();
+      ISAM2Params isam_parameters;
+      isam_parameters.relinearizeThreshold = 0.01;
+      isam_parameters.relinearizeSkip = 1;
+      isam_parameters.cacheLinearizedFactors = false;
+      isam_parameters.enableDetailedResults = true;
+      isam_ = ISAM2(isam_parameters);
+    }
 
     // reset up priors
     add_priors(initial_state);
@@ -561,6 +572,22 @@ namespace estimator {
     add_imu_factor();
   }
 
+
+  void FactorGraphEstimator::register_camera(const std::string name, const std::shared_ptr<transform> transform, const std::shared_ptr<camera_info> camera_info) {
+    if(name.empty()) {
+      std::cout << "ERROR: invalid name of camera cannot be empty" << std::endl;
+    }
+    // TODO validate the camera intrinsics make sense
+    gtsam_camera cam;
+    // TODO check this is correct
+    cam.K = boost::make_shared<gtsam::Cal3_S2>(camera_info->fx, camera_info->fy, camera_info->s, camera_info->u0, camera_info->v0);
+    cam.transform = Pose3(Rot3::Quaternion(transform->qw, transform->qx, transform->qy, transform->qz), Point3(transform->x,transform->y,transform->z));
+    camera_map.insert(std::pair<std::string, gtsam_camera>(name, cam));
+  }
+
+  double FactorGraphEstimator::get_optimization_time() {
+    return optimization_time_;
+  }
 
 } // estimator
 } // StateEstimator
