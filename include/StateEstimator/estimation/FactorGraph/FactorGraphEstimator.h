@@ -33,7 +33,7 @@ namespace estimator {
 
   struct isam_parameters {
     // https://borg.cc.gatech.edu/sites/edu.borg/html/a00135.html#af5da340f5774c8ccbbdecfc0a5299888
-    double relinearizeThreshold = 0.1;
+    double relinearizeThreshold = 0.01;
     int relinearizeSkip = 1;
     bool enablePartialRelinearizationCheck = false;
     bool chacheLinearedFactors = false;
@@ -64,8 +64,8 @@ namespace estimator {
 
   struct pose_factor_params {
     bool usePoseFactor = true;
-    std::array<double, 6> poseNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
-    std::array<double, 3> poseVelNoise = {0.1, 0.1, 0.1};
+    std::array<double, 6> poseNoise = {0.25, 0.25, 0.25, 0.25, 0.25, 0.25};
+    std::array<double, 3> poseVelNoise = {0.3, 0.3, 0.3};
   };
 
   struct camera_factor_params {
@@ -76,7 +76,7 @@ namespace estimator {
   struct prior_config {
     drone_state initial_state;
     double initial_vel_noise = 0.1;
-    std::array<double, 6> initial_pose_noise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};//rad, rad, rad, m,m,m
+    std::array<double, 6> initial_pose_noise = {0.05, 0.05, 0.05, 0.25, 0.25, 0.25};//rad, rad, rad, m,m,m
     double initial_bias_noise = 0.1;
   };
 

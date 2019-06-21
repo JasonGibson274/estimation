@@ -299,6 +299,9 @@ namespace estimator {
       current_position_guess_.print();
       std::cout << "\n\n current velocity guess" << std::endl;
       std::cout << current_velocity_guess_ << std::endl;
+      if(use_imu_factors_) {
+        current_bias_guess_.print("\n\nCurrent bias guess");
+      }
     }
 
     // set the result to best guess
