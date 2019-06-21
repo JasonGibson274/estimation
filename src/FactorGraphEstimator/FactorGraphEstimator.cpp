@@ -21,17 +21,16 @@ namespace estimator {
     vel_change_accum_ = Vector3(0,0,0);
 
     // Construct parameters for ISAM optimizer
-    ISAM2Params isam_parameters;
-    isam_parameters.relinearizeThreshold = estimator_config.isamParameters.relinearizeThreshold;
-    isam_parameters.relinearizeSkip = estimator_config.isamParameters.relinearizeSkip;
-    isam_parameters.enablePartialRelinearizationCheck = estimator_config.isamParameters.enablePartialRelinearizationCheck;
-    isam_parameters.cacheLinearizedFactors = estimator_config.isamParameters.chacheLinearedFactors;
-    isam_parameters.enableDetailedResults = estimator_config.isamParameters.enableDetailedResults;
-    isam_parameters.findUnusedFactorSlots = estimator_config.isamParameters.findUnusedFactorSlots;
+    isam_parameters_.relinearizeThreshold = estimator_config.isamParameters.relinearizeThreshold;
+    isam_parameters_.relinearizeSkip = estimator_config.isamParameters.relinearizeSkip;
+    isam_parameters_.enablePartialRelinearizationCheck = estimator_config.isamParameters.enablePartialRelinearizationCheck;
+    isam_parameters_.cacheLinearizedFactors = estimator_config.isamParameters.chacheLinearedFactors;
+    isam_parameters_.enableDetailedResults = estimator_config.isamParameters.enableDetailedResults;
+    isam_parameters_.findUnusedFactorSlots = estimator_config.isamParameters.findUnusedFactorSlots;
     gtsam::ISAM2GaussNewtonParams optimizationParams;
     optimizationParams.wildfireThreshold = estimator_config.isamParameters.gaussianWildfireThreshold;
-    isam_parameters.optimizationParams = optimizationParams;
-    isam_ = ISAM2(isam_parameters);
+    isam_parameters_.optimizationParams = optimizationParams;
+    isam_ = ISAM2(isam_parameters_);
 
     // camera
     use_camera_factors_ = estimator_config.cameraFactorParams.useCameraFactor;
@@ -76,6 +75,7 @@ namespace estimator {
     preintegrator_imu_ = PreintegratedImuMeasurements(p, gtsam::imuBias::ConstantBias());
 
     // pose factor noise
+    use_pose_factors_ = estimator_config.poseFactorParams.usePoseFactor;
     std::array<double, 3> odom_vel_arr = estimator_config.poseFactorParams.poseVelNoise;
     Vector3 odom_vel_noise = Vector3(odom_vel_arr[0],odom_vel_arr[1],odom_vel_arr[2]);
     std::cout << "odom vel noise = " << odom_vel_noise << std::endl;
@@ -97,6 +97,10 @@ namespace estimator {
    */
   void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_data) {
     if(!use_imu_factors_) {
+      return;
+    }
+    if(imu_data->dt <= 0) {
+      std::cout << "ERROR: cannot use imu reading with 0 dt" << std::endl;
       return;
     }
     position_update_ = true;
@@ -212,6 +216,11 @@ namespace estimator {
       // New Landmark - Add a new Factor
       if (landmark_factor_it == landmark_factors_.end()) {
         gtsam_camera camera = camera_map[camera_name];
+        //SmartProjectionParams params;
+        //TriangulationParameters tri_params;
+        //tri_params.landmarkDistanceThreshold = 10;
+        //tri_params.dynamicOutlierRejectionThreshold = 100;
+        //params.triangulation = tri_params;
         SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor(new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, camera.K, camera.transform));
         landmark_factors_[l_id] = smartFactor;
         current_incremental_graph_.push_back(smartFactor);
@@ -253,14 +262,20 @@ namespace estimator {
     lock_guard<mutex> graph_lck(graph_lck_);
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
 
-
-    //NonlinearFactorGraph isam_graph = current_incremental_graph_.clone();
+    history_.insert(gtsam_current_state_initial_guess_);
     if(debug_) {
-      std::cout << "\n\n incremental graph" << std::endl;
-      //current_incremental_graph_.printErrors(gtsam_current_state_initial_guess_);
-      current_incremental_graph_.print();
       std::cout << "\n\n guess state guesses" << std::endl;
       gtsam_current_state_initial_guess_.print();
+      std::cout << "\n\n incremental graph with error" << std::endl;
+      current_incremental_graph_.printErrors(history_);
+      std::cout << "\n\ncalling optimize" << std::endl;
+      std::cout << "\n\nhas " << landmark_factors_.size() << " factors" << std::endl;
+      for(auto it = landmark_factors_.begin(); it != landmark_factors_.end(); it++) {
+        std::cout << "factor = " << it->first << std::endl;
+        it->second->print();
+        std::cout << "error " << it->second->error(history_) << "\n\n" << std::endl;
+      }
+      //current_incremental_graph_.print();
     }
 
     auto start = std::chrono::steady_clock::now();
@@ -277,10 +292,6 @@ namespace estimator {
     current_velocity_guess_ = isam_.calculateEstimate<Vector3>(symbol_shorthand::V(index_));
     if(use_imu_factors_) {
       current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_));
-      // print bias
-      if(debug_) {
-        std::cout << "bias = " << current_bias_guess_ << std::endl;
-      }
     }
 
     if(debug_) {
@@ -307,7 +318,16 @@ namespace estimator {
     // clear incremental graph and current guesses
     current_incremental_graph_ = NonlinearFactorGraph();
     gtsam_current_state_initial_guess_.clear();
-
+    /*
+     * gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
+                                              current_position_guess_);
+    gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_),
+                                              current_velocity_guess_);
+    if(use_imu_factors_) {
+      gtsam_current_state_initial_guess_.insert(symbol_shorthand::B(bias_index_),
+                                              current_bias_guess_);
+    }
+     */
   }
 
   /**
@@ -338,7 +358,7 @@ namespace estimator {
     double pitch_dot = angular_vel[1];
     double yaw_dot = angular_vel[2];
 
-    if(debug_) {
+    /*if(debug_) {
       std::cout.precision(10);
       std::cout << "===== prop =====" << std::endl;
       std::cout << "dt = " << dt << std::endl;
@@ -349,7 +369,7 @@ namespace estimator {
       std::cout << "pos before = " << x << ", " << y << ", " << z << std::endl;
       std::cout << "rpy before = " << roll << ", " << pitch << ", " << yaw << std::endl;
       std::cout << "vel before = " << x_dot << ", " << y_dot << ", " << z_dot << std::endl;
-    }
+    }*/
 
     //Update angular rate
     result.roll_dot = roll_dot;
@@ -357,9 +377,9 @@ namespace estimator {
     result.yaw_dot = yaw_dot;
 
     //Position update
-    result.x = x + x_dot*dt + 0.5*acc[0]*pow(dt, 2);
-    result.y = y + y_dot*dt + 0.5*acc[1]*pow(dt, 2);
-    result.z = z + z_dot*dt;// + 0.5*acc[2]*pow(dt, 2);
+    //result.x = x + x_dot*dt + 0.5*acc[0]*pow(dt, 2);
+    //result.y = y + y_dot*dt + 0.5*acc[1]*pow(dt, 2);
+    //result.z = z + z_dot*dt;// + 0.5*acc[2]*pow(dt, 2);
 
     //Update velocity
     float c_phi, c_theta, c_psi, s_phi, s_theta, s_psi;
@@ -377,6 +397,11 @@ namespace estimator {
     result.y_dot = y_dot + (c_theta*s_psi)*ux + (s_phi*s_theta*s_psi + c_phi*c_psi)*uy + (c_phi*s_theta*s_psi - s_phi*c_psi)*uz;
     result.z_dot = z_dot + (-s_theta)*ux + (c_theta*s_phi)*uy + (c_theta*c_phi)*uz - GRAVITY*dt;
 
+    //position update
+    result.x = x + (result.x_dot + x_dot) / 2 * dt;
+    result.y = y + (result.y_dot + y_dot) / 2 * dt;
+    result.z = z + (result.z_dot + z_dot) / 2 * dt;
+
     //Update the euler angles
     float r_result, p_result, y_result;
     r_result = roll + (roll_dot + (s_phi*s_theta/c_theta)*pitch_dot + (c_phi*s_theta/c_theta)*yaw_dot)*dt;
@@ -391,12 +416,12 @@ namespace estimator {
             Point3(result.x, result.y, result.z));
     current_velocity_guess_ = Vector3(result.x_dot, result.y_dot, result.z_dot);
     //std::cout << "\n\n vel after: \n" << *current_velocity_guess_ << std::endl;
-    if(debug_) {
+    /*if(debug_) {
       std::cout << "===== after ====" << std::endl;
       std::cout << "pos after = " << result.x << ", " << result.y << ", " << result.z << std::endl;
       std::cout << "rpy after = " << r_result << ", " << p_result << ", " << y_result << std::endl;
       std::cout << "vel after = " << result.x_dot << ", " << result.y_dot << ", " << result.z_dot << std::endl;
-    }
+    }*/
   }
 
   void FactorGraphEstimator::callback_range(int rangestuff) {
@@ -485,7 +510,8 @@ namespace estimator {
       current_incremental_graph_ = NonlinearFactorGraph();
       gtsam_current_state_initial_guess_.clear();
       preintegrator_imu_.resetIntegration();
-      isam_.clear();
+      isam_ = ISAM2(isam_parameters_);
+      history_.clear();
     }
 
     // reset up priors
@@ -597,6 +623,7 @@ namespace estimator {
     // TODO validate the camera intrinsics make sense
     gtsam_camera cam;
     // TODO check this is correct
+    // x focal, y focal, skew, center in x, center in y
     cam.K = boost::make_shared<gtsam::Cal3_S2>(camera_info->fx, camera_info->fy, camera_info->s, camera_info->u0, camera_info->v0);
     cam.transform = Pose3(Rot3::Quaternion(transform->qw, transform->qx, transform->qy, transform->qz), Point3(transform->x,transform->y,transform->z));
     camera_map.insert(std::pair<std::string, gtsam_camera>(name, cam));

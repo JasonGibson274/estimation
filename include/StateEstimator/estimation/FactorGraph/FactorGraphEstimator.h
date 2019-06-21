@@ -135,6 +135,10 @@ private:
 
   prior_config prior_config_;
 
+  gtsam::ISAM2Params isam_parameters_;
+
+  gtsam::Values history_;
+
   // ========= POSE FACTOR HELPERS =========
   // number of pose messages
   int pose_message_count_ = 0;
