@@ -9,13 +9,14 @@ using namespace alphapilot;
 using namespace gtsam;
 
 int main() {
-  std::shared_ptr<drone_state> init_state = std::make_shared<drone_state>();
-  init_state->z = 1.0;
-  init_state->qx = 0.0;
-  init_state->qy = 0.0;
-  init_state->qz = 0.0;
-  init_state->qw = 1.0;
-  FactorGraphEstimator estimator(init_state, true);
+  estimator_config config;
+  config.priorConfig.initial_state.z = 1.0;
+  config.priorConfig.initial_state.qx = 0.0;
+  config.priorConfig.initial_state.qy = 0.0;
+  config.priorConfig.initial_state.qz = 0.0;
+  config.priorConfig.initial_state.qw = 1.0;
+  config.debug = true;
+  FactorGraphEstimator estimator(config);
   std::cout << "\ninit ended\n" << std::endl;
 
   std::shared_ptr<camera_info> K = std::make_shared<camera_info>();

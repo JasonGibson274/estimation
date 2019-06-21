@@ -13,26 +13,56 @@ namespace estimator {
    * Constructor for the Factor Graph Estimator; sets up the noise models
    * @param initial_state, start location to begin the optimization
    */
-  FactorGraphEstimator::FactorGraphEstimator(const std::shared_ptr<drone_state>& initial_state, bool debug) {
-    debug_ = debug;
+  FactorGraphEstimator::FactorGraphEstimator(const estimator_config &estimator_config) {
+    debug_ = estimator_config.debug;
+    prior_config_ = estimator_config.priorConfig;
 
     // init the set of Values passed to GTSAM during optimization
     vel_change_accum_ = Vector3(0,0,0);
 
-    // init camera to flightgoggles default, TODO have correct estimate
+    // Construct parameters for ISAM optimizer
+    ISAM2Params isam_parameters;
+    isam_parameters.relinearizeThreshold = estimator_config.isamParameters.relinearizeThreshold;
+    isam_parameters.relinearizeSkip = estimator_config.isamParameters.relinearizeSkip;
+    isam_parameters.enablePartialRelinearizationCheck = estimator_config.isamParameters.enablePartialRelinearizationCheck;
+    isam_parameters.cacheLinearizedFactors = estimator_config.isamParameters.chacheLinearedFactors;
+    isam_parameters.enableDetailedResults = estimator_config.isamParameters.enableDetailedResults;
+    isam_parameters.findUnusedFactorSlots = estimator_config.isamParameters.findUnusedFactorSlots;
+    gtsam::ISAM2GaussNewtonParams optimizationParams;
+    optimizationParams.wildfireThreshold = estimator_config.isamParameters.gaussianWildfireThreshold;
+    isam_parameters.optimizationParams = optimizationParams;
+    isam_ = ISAM2(isam_parameters);
+
+    // camera
+    use_camera_factors_ = estimator_config.cameraFactorParams.useCameraFactor;
+    cam_measurement_noise_ =
+      noiseModel::Isotropic::Sigma(2, estimator_config.cameraFactorParams.pixelNoise);  // one pixel in u and v
+
+    // IMU
+    // TODO IMU config
+    use_imu_factors_ = estimator_config.imuFactorParams.useImuFactor;
+    invert_x_ = estimator_config.imuFactorParams.invertX;
+    invert_y_ = estimator_config.imuFactorParams.invertY;
+    invert_z_ = estimator_config.imuFactorParams.invertZ;
+    Vector6 covvec;
+    std::array<double, 6> covvec_arr = estimator_config.imuFactorParams.biasNoise;
+    covvec << covvec_arr[0], covvec_arr[1], covvec_arr[2], covvec_arr[3], covvec_arr[4], covvec_arr[5];
+    bias_noise_ = noiseModel::Diagonal::Variances(covvec);
 
     // setup IMU preintegrator parameters
     boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedU(GRAVITY);
-    double accel_noise_sigma = 2.0;
-    double gyro_noise_sigma = 0.1;
-    double accel_bias_rw_sigma = 0.1;
-    double gyro_bias_rw_sigma = 0.1;
+    double accel_noise_sigma = estimator_config.imuFactorParams.accelNoiseSigma;
+    double gyro_noise_sigma = estimator_config.imuFactorParams.gyroNoiseSigma;
+    double accel_bias_rw_sigma = estimator_config.imuFactorParams.accelBiasRwSigma;
+    double gyro_bias_rw_sigma = estimator_config.imuFactorParams.gyroBiasRwSigma;
     Matrix33 measured_acc_cov = Matrix33::Identity(3,3) * pow(accel_noise_sigma,2);
     Matrix33 measured_omega_cov = Matrix33::Identity(3,3) * pow(gyro_noise_sigma,2);
-    Matrix33 integration_error_cov = Matrix33::Identity(3,3)*1e-4; // error committed in integrating position from velocities
+    // error committed in integrating position from velocities
+    Matrix33 integration_error_cov = Matrix33::Identity(3,3)*estimator_config.imuFactorParams.integrationErrorCov;
     Matrix33 bias_acc_cov = Matrix33::Identity(3,3) * pow(accel_bias_rw_sigma,2);
     Matrix33 bias_omega_cov = Matrix33::Identity(3,3) * pow(gyro_bias_rw_sigma,2);
-    Matrix66 bias_acc_omega_int = Matrix::Identity(6,6)*0.1; // error in the bias used for preintegration
+    // error in the bias used for preintegration
+    Matrix66 bias_acc_omega_int = Matrix::Identity(6,6)*estimator_config.imuFactorParams.biasAccOmegaInt;
 
     // add them to the params
     p->accelerometerCovariance = measured_acc_cov; // acc white noise in continuous
@@ -45,34 +75,19 @@ namespace estimator {
     // use regular preintegrated
     preintegrator_imu_ = PreintegratedImuMeasurements(p, gtsam::imuBias::ConstantBias());
 
-    // Construct parameters for ISAM optimizer
-    ISAM2Params isam_parameters;
-    isam_parameters.relinearizeThreshold = 0.01;
-    isam_parameters.relinearizeSkip = 1;
-    isam_parameters.cacheLinearizedFactors = false;
-    isam_parameters.enableDetailedResults = true;
-    isam_ = ISAM2(isam_parameters);
-
-    // Initialize Noise Models
-    cam_measurement_noise_ =
-      noiseModel::Isotropic::Sigma(2, 10.0);  // one pixel in u and v
-
-    Vector6 covvec;
-    covvec << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
-    std::cout << "bias noise = " << covvec << std::endl;
-    bias_noise_ = noiseModel::Diagonal::Variances(covvec);
-
     // pose factor noise
-    Vector3 odom_vel_noise = Vector3(0.1,0.1,0.1);
+    std::array<double, 3> odom_vel_arr = estimator_config.poseFactorParams.poseVelNoise;
+    Vector3 odom_vel_noise = Vector3(odom_vel_arr[0],odom_vel_arr[1],odom_vel_arr[2]);
     std::cout << "odom vel noise = " << odom_vel_noise << std::endl;
     odometry_vel_noise_ = noiseModel::Diagonal::Sigmas(odom_vel_noise);
     Vector6 pose_noise;
-    pose_noise << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
+    std::array<double, 6> pose_noise_arr = estimator_config.poseFactorParams.poseNoise;
+    pose_noise << pose_noise_arr[0], pose_noise_arr[1], pose_noise_arr[2], pose_noise_arr[3], pose_noise_arr[4], pose_noise_arr[5];
     std::cout << "pose noise = " << pose_noise << std::endl;
     odometry_pose_noise_ = noiseModel::Diagonal::Sigmas(pose_noise);
 
     // add the priors on state
-    add_priors(initial_state);
+    add_priors(estimator_config.priorConfig.initial_state);
   }
 
   /**
@@ -391,10 +406,10 @@ namespace estimator {
 
   }
 
-  void FactorGraphEstimator::add_priors(const std::shared_ptr<drone_state> initial_state) {
-    current_position_guess_ = Pose3(Rot3::Quaternion(initial_state->qw, initial_state->qx, initial_state->qy, initial_state->qz),
-            Point3(initial_state->x,initial_state->y,initial_state->z));
-    current_velocity_guess_ = Vector3(initial_state->x_dot, initial_state->y_dot, initial_state->z_dot);
+  void FactorGraphEstimator::add_priors(const drone_state &initial_state) {
+    current_position_guess_ = Pose3(Rot3::Quaternion(initial_state.qw, initial_state.qx, initial_state.qy, initial_state.qz),
+            Point3(initial_state.x,initial_state.y,initial_state.z));
+    current_velocity_guess_ = Vector3(initial_state.x_dot, initial_state.y_dot, initial_state.z_dot);
     Vector6 bias_tmp;
     bias_tmp << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     std::cout << "bias temp = " << current_bias_guess_ << std::endl;
@@ -412,17 +427,24 @@ namespace estimator {
     // create priors on the state
 
     // Assemble prior noise model and add it the graph.
+    std::array<double, 6> pose_noise_arr = prior_config_.initial_pose_noise;
     noiseModel::Diagonal::shared_ptr pose_noise_model = noiseModel::Diagonal::Sigmas((Vector(6)
-            << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1).finished()); // rad,rad,rad,m, m, m
-    std::cout << "\npose noise prior pointer = " << std::endl;
-    std::cout << pose_noise_model->sigmas();
-    noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3,0.1); // m/s
-    std::cout << "\nvel prior pointer = " << std::endl;
-    std::cout << velocity_noise_model->sigmas();
-    noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Isotropic::Sigma(6,1e-3);
-    std::cout << "\nbias_noise_model prior = " << std::endl;
-    std::cout << bias_noise_model->sigmas();
+            << pose_noise_arr[0], pose_noise_arr[1], pose_noise_arr[2], pose_noise_arr[3], pose_noise_arr[4], pose_noise_arr[5]).finished()); // rad,rad,rad,m, m, m
+    if(debug_) {
+      std::cout << "\npose noise prior pointer = " << std::endl;
+      std::cout << pose_noise_model->sigmas();
+    }
 
+    noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3, prior_config_.initial_vel_noise);
+    if(debug_) {
+      std::cout << "\nvel prior pointer = " << std::endl;
+      std::cout << velocity_noise_model->sigmas();
+    }
+    noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Isotropic::Sigma(6,prior_config_.initial_bias_noise);
+    if(debug_) {
+      std::cout << "\nbias_noise_model prior = " << std::endl;
+      std::cout << bias_noise_model->sigmas();
+    }
     // priors match initial guess
     current_incremental_graph_.add(PriorFactor<Pose3>(symbol_shorthand::X(index_), current_position_guess_, pose_noise_model));
     current_incremental_graph_.add(PriorFactor<Vector3>(symbol_shorthand::V(index_), current_velocity_guess_, velocity_noise_model));
@@ -449,7 +471,7 @@ namespace estimator {
     run_optimize();
   }
 
-  void FactorGraphEstimator::resetGraph(const std::shared_ptr<drone_state> initial_state) {
+  void FactorGraphEstimator::resetGraph(const drone_state &initial_state) {
     {
       lock_guard<mutex> graph_lck(graph_lck_);
       lock_guard<mutex> preintegration_lck(preintegrator_lck_);
@@ -463,12 +485,7 @@ namespace estimator {
       current_incremental_graph_ = NonlinearFactorGraph();
       gtsam_current_state_initial_guess_.clear();
       preintegrator_imu_.resetIntegration();
-      ISAM2Params isam_parameters;
-      isam_parameters.relinearizeThreshold = 0.01;
-      isam_parameters.relinearizeSkip = 1;
-      isam_parameters.cacheLinearizedFactors = false;
-      isam_parameters.enableDetailedResults = true;
-      isam_ = ISAM2(isam_parameters);
+      isam_.clear();
     }
 
     // reset up priors

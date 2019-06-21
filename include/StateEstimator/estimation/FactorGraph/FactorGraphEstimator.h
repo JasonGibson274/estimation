@@ -31,17 +31,75 @@ namespace estimator {
     boost::shared_ptr<gtsam::Cal3_S2> K;
   };
 
+  struct isam_parameters {
+    // https://borg.cc.gatech.edu/sites/edu.borg/html/a00135.html#af5da340f5774c8ccbbdecfc0a5299888
+    double relinearizeThreshold = 0.1;
+    int relinearizeSkip = 1;
+    bool enablePartialRelinearizationCheck = false;
+    bool chacheLinearedFactors = false;
+    bool enableDetailedResults = true;
+    bool findUnusedFactorSlots = false;
+    double gaussianWildfireThreshold = 0.001;
+  };
+
+  struct imu_factor_params {
+    // factor specific
+    double accelNoiseSigma = 2.0;
+    double gyroNoiseSigma = 0.1;
+    double accelBiasRwSigma = 0.1;
+    double gyroBiasRwSigma = 0.1;
+    double integrationErrorCov = 1e-4;
+    double biasAccOmegaInt = 0.1;
+
+    // general
+    bool useImuFactor = true;
+    int imuBiasIncr = 5;
+    bool invertX = false;
+    bool invertY = false;
+    bool invertZ = false;
+
+    // bias noise
+    std::array<double, 6> biasNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
+  };
+
+  struct pose_factor_params {
+    bool usePoseFactor = true;
+    std::array<double, 6> poseNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
+    std::array<double, 3> poseVelNoise = {0.1, 0.1, 0.1};
+  };
+
+  struct camera_factor_params {
+    bool useCameraFactor = true;
+    double pixelNoise = 10.0;
+  };
+
+  struct prior_config {
+    drone_state initial_state;
+    double initial_vel_noise = 0.1;
+    std::array<double, 6> initial_pose_noise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};//rad, rad, rad, m,m,m
+    double initial_bias_noise = 0.1;
+  };
+
+  struct estimator_config {
+    bool debug = false;
+    isam_parameters isamParameters;
+    imu_factor_params imuFactorParams;
+    pose_factor_params poseFactorParams;
+    camera_factor_params cameraFactorParams;
+    prior_config priorConfig;
+  };
+
 
 class FactorGraphEstimator : Estimator {
 public:
-  FactorGraphEstimator(const std::shared_ptr<drone_state>& initial_state, bool debug);
+  explicit FactorGraphEstimator(const estimator_config &estimator_config);
 
   virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data, std::string camera_name);
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(const int rangestuff);
   virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);
   virtual void callback_odometry(const std::shared_ptr<drone_state> odom_data);
-  virtual void resetGraph(std::shared_ptr<drone_state> state);
+  virtual void resetGraph(const drone_state &state);
   virtual void register_camera(const std::string name, const std::shared_ptr<transform> transform, const std::shared_ptr<camera_info> camera_info);
   virtual double get_optimization_time();
 
@@ -54,7 +112,7 @@ public:
 private:
 	virtual void add_imu_factor();
 	virtual void add_pose_factor();
-	virtual void add_priors(std::shared_ptr<drone_state> initial_state);
+	virtual void add_priors(const drone_state &initial_state);
 	virtual void add_factors();
   void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
 
@@ -74,6 +132,8 @@ private:
   bool use_camera_factors_ = true;
 
   int previous_optimization_index_ = 0;
+
+  prior_config prior_config_;
 
   // ========= POSE FACTOR HELPERS =========
   // number of pose messages
