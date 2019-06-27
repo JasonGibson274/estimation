@@ -6,7 +6,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #ifndef STATEESTIMATOR_ESTIMATOR_H
 #define STATEESTIMATOR_ESTIMATOR_H
 
-#include <StateEstimator/Utils.h>
+#include <alphapilot_common/Utils.h>
 
 class Estimator {
 public:
