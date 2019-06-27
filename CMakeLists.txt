@@ -99,6 +99,6 @@ install(
   FILES_MATCHING PATTERN "*.h"
   )
 
-set(${PROJECT_NAME}_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include PARENT_SCOPE)
+set(${PROJECT_NAME}_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include PARENT)
 # TODO set up properly lower
-set(${PROJECT_NAME}_LIBRARIES FactorGraphEstimator_plugin PARENT_SCOPE)
+set(${PROJECT_NAME}_LIBRARIES FactorGraphEstimator_plugin PARENT)

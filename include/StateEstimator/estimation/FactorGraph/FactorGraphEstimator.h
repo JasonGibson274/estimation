@@ -14,7 +14,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
 
-#include <StateEstimator/Utils.h>
+#include <alphapilot_common/Utils.h>
 
 #include <map>
 #include <mutex>
@@ -82,6 +82,8 @@ namespace estimator {
 
   struct estimator_config {
     bool debug = false;
+    // initial time to start the factor graph at
+    double time = 0.0;
     isam_parameters isamParameters;
     imu_factor_params imuFactorParams;
     pose_factor_params poseFactorParams;
@@ -179,6 +181,7 @@ private:
   // ========== IMU ===========================
 	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
 	// the number of IMU messages currently integrated
+	double last_imu_time_;
 	int imu_meas_count_ = 0;
 	bool invert_x_ = false;
   bool invert_y_ = false;

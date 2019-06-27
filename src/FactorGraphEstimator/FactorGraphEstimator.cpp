@@ -15,6 +15,7 @@ namespace estimator {
    */
   FactorGraphEstimator::FactorGraphEstimator(const estimator_config &estimator_config) {
     debug_ = estimator_config.debug;
+    last_imu_time_ = estimator_config.time;
     prior_config_ = estimator_config.priorConfig;
 
     // init the set of Values passed to GTSAM during optimization
@@ -99,7 +100,15 @@ namespace estimator {
     if(!use_imu_factors_) {
       return;
     }
-    if(imu_data->dt <= 0) {
+    double dt = 0;
+    if(last_imu_time_ == 0) {
+      std::cout << "WARNING: last_imu_time == 0 using time since start" << std::endl;
+      dt = 0.01;
+    } else {
+      dt = imu_data->time - last_imu_time_;
+    }
+    last_imu_time_ = imu_data->time;
+    if(dt <= 0) {
       std::cout << "ERROR: cannot use imu reading with 0 dt" << std::endl;
       return;
     }
@@ -113,12 +122,12 @@ namespace estimator {
     Vector3 accel = Vector3 (imu_data->x_accel * invert_x, imu_data->y_accel * invert_y, imu_data->z_accel * invert_z);
     Vector3 ang_rate = Vector3 (imu_data->roll_vel * invert_x, imu_data->pitch_vel * invert_y, imu_data->yaw_vel * invert_z);
     lock_guard<mutex> preintegration_lck(preintegrator_lck_);
-    preintegrator_imu_.integrateMeasurement(accel, ang_rate, imu_data->dt);
+    preintegrator_imu_.integrateMeasurement(accel, ang_rate, dt);
     imu_meas_count_++;
 
     // integrate the IMU to get an updated estimate of the current position
     // integrate the imu reading using affine dynamics from TODO cite
-    propagate_imu(accel, ang_rate, imu_data->dt);
+    propagate_imu(accel, ang_rate, dt);
   }
 
   /**
@@ -268,19 +277,20 @@ namespace estimator {
       gtsam_current_state_initial_guess_.print();
       std::cout << "\n\n incremental graph with error" << std::endl;
       current_incremental_graph_.printErrors(history_);
-      std::cout << "\n\ncalling optimize" << std::endl;
-      std::cout << "\n\nhas " << landmark_factors_.size() << " factors" << std::endl;
+      std::cout << "\n\nlandmark factors have " << landmark_factors_.size() << " active factors" << std::endl;
       for(auto it = landmark_factors_.begin(); it != landmark_factors_.end(); it++) {
         std::cout << "factor = " << it->first << std::endl;
         it->second->print();
         std::cout << "error " << it->second->error(history_) << "\n\n" << std::endl;
       }
-      //current_incremental_graph_.print();
     }
 
     auto start = std::chrono::steady_clock::now();
 
     // run update and run optimization
+    if(debug_) {
+      std::cout << "\n\ncalling optimize" << std::endl;
+    }
     isam_.update(current_incremental_graph_, gtsam_current_state_initial_guess_);
 
     auto end = std::chrono::steady_clock::now();
@@ -545,13 +555,13 @@ namespace estimator {
 
     pose_message_count_++;
 
-    Quaternion odom_q = Quaternion(odom_data->qw, odom_data->qx, odom_data->qy, odom_data->qz);
+    gtsam::Quaternion odom_q = gtsam::Quaternion(odom_data->qw, odom_data->qx, odom_data->qy, odom_data->qz);
     odom_q.normalize();
-    Quaternion last_pose_q(last_pose_state_.qw, last_pose_state_.qx, last_pose_state_.qy, last_pose_state_.qz);
+    gtsam::Quaternion last_pose_q(last_pose_state_.qw, last_pose_state_.qx, last_pose_state_.qy, last_pose_state_.qz);
     last_pose_q.normalize();
 
     // find the difference between the two quaternions
-    Rot3 rot_update = traits<Quaternion>::Between(last_pose_q, odom_q);
+    Rot3 rot_update = traits<gtsam::Quaternion>::Between(last_pose_q, odom_q);
     pose_rot_accum_ = pose_rot_accum_ * rot_update;
 
     Point3 trans_update = Point3(odom_data->x - last_pose_state_.x, odom_data->y - last_pose_state_.y,

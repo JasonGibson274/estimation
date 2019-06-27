@@ -10,6 +10,7 @@ using namespace gtsam;
 
 int main() {
   estimator_config config;
+  config.time = 0.0;
   config.priorConfig.initial_state.z = 1.0;
   config.priorConfig.initial_state.qx = 0.0;
   config.priorConfig.initial_state.qy = 0.0;
@@ -53,7 +54,7 @@ int main() {
 
   std::cout << "\nstarting imu callback\n" << std::endl;
   std::shared_ptr<IMU_readings> reading_imu = std::make_shared<IMU_readings>();
-  reading_imu->dt = 0.1;
+  reading_imu->time = 0.1;
   reading_imu->x_accel = 1.0;
   reading_imu->y_accel = 1.0;
   reading_imu->z_accel = 9.81;
@@ -61,14 +62,32 @@ int main() {
   reading_imu->pitch_vel = 0.0;
   reading_imu->yaw_vel = 0.0;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.2;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.3;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.4;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.5;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.6;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.7;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.8;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.9;
   estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 1.0;
   estimator.callback_imu(reading_imu);
   std::cout << "\nending imu callback\n" << std::endl;
 
@@ -90,7 +109,7 @@ int main() {
   std::cout << "\nodom callback ended\n" << std::endl;
 
   std::cout << "\nstarting imu callback\n" << std::endl;
-  reading_imu->dt = 1.0;
+  reading_imu->time = 2.0;
   reading_imu->x_accel = -1.0;
   reading_imu->y_accel = -1.0;
   estimator.callback_imu(reading_imu);
