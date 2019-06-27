@@ -102,11 +102,9 @@ namespace estimator {
     }
     double dt = 0;
     if(last_imu_time_ == 0) {
-      std::cout << "WARNING: last_imu_time == 0 using time since start" << std::endl;
-      dt = 0.01;
-    } else {
-      dt = imu_data->time - last_imu_time_;
+      std::cout << "WARNING: last_imu_time == 0" << std::endl;
     }
+    dt = imu_data->time - last_imu_time_;
     last_imu_time_ = imu_data->time;
     if(dt <= 0) {
       std::cout << "ERROR: cannot use imu reading with 0 dt" << std::endl;
@@ -371,7 +369,7 @@ namespace estimator {
     double pitch_dot = angular_vel[1];
     double yaw_dot = angular_vel[2];
 
-    /*if(debug_) {
+    if(debug_) {
       std::cout.precision(10);
       std::cout << "===== prop =====" << std::endl;
       std::cout << "dt = " << dt << std::endl;
@@ -382,7 +380,7 @@ namespace estimator {
       std::cout << "pos before = " << x << ", " << y << ", " << z << std::endl;
       std::cout << "rpy before = " << roll << ", " << pitch << ", " << yaw << std::endl;
       std::cout << "vel before = " << x_dot << ", " << y_dot << ", " << z_dot << std::endl;
-    }*/
+    }
 
     //Update angular rate
     result.roll_dot = roll_dot;
@@ -429,12 +427,13 @@ namespace estimator {
             Point3(result.x, result.y, result.z));
     current_velocity_guess_ = Vector3(result.x_dot, result.y_dot, result.z_dot);
     //std::cout << "\n\n vel after: \n" << *current_velocity_guess_ << std::endl;
-    /*if(debug_) {
+    if(debug_) {
+      std::cout << "ux = " << ux << ", uy = " << uy << ", uz = " << uz << std::endl;
       std::cout << "===== after ====" << std::endl;
       std::cout << "pos after = " << result.x << ", " << result.y << ", " << result.z << std::endl;
       std::cout << "rpy after = " << r_result << ", " << p_result << ", " << y_result << std::endl;
       std::cout << "vel after = " << result.x_dot << ", " << result.y_dot << ", " << result.z_dot << std::endl;
-    }*/
+    }
   }
 
   void FactorGraphEstimator::callback_range(int rangestuff) {

@@ -19,7 +19,18 @@ int main() {
   config.debug = true;
   config.imuFactorParams.useImuFactor = true;
   config.cameraFactorParams.useCameraFactor = true;
-  config.poseFactorParams.usePoseFactor = false;
+  config.poseFactorParams.usePoseFactor = true;
+
+  // pose factor
+  config.poseFactorParams.poseNoise = {5.0, 5.0, 5.0, 5.0, 5.0, 5.0};
+  config.poseFactorParams.poseVelNoise = {5.0, 5.0, 5.0};
+
+  //parameter tuning IMU
+  config.imuFactorParams.accelNoiseSigma = 0.1;
+  config.imuFactorParams.gyroNoiseSigma = 0.01;
+  config.imuFactorParams.accelBiasRwSigma = 0.01;
+  config.imuFactorParams.gyroBiasRwSigma = 0.01;
+
   FactorGraphEstimator estimator(config);
   //estimator.resetGraph(config.priorConfig.initial_state);
   std::cout << "\ninit ended\n" << std::endl;
@@ -40,10 +51,10 @@ int main() {
   std::cout << "\nstarting odom callback\n" << std::endl;
   std::shared_ptr<drone_state> reading_odom = std::make_shared<drone_state>();
   reading_odom->z = 1.0;
-  reading_odom->y = 0.05;
-  reading_odom->x = 0.05;
-  reading_odom->x_dot = 0.1;
-  reading_odom->y_dot = 0.1;
+  reading_odom->y = 0.0;
+  reading_odom->x = 0.0;
+  reading_odom->x_dot = 0.0;
+  reading_odom->y_dot = 0.0;
   reading_odom->qx = 0.0;
   reading_odom->qy = 0.0;
   reading_odom->qz = 0.0;
@@ -100,13 +111,7 @@ int main() {
   std::cout << "\nending camera callback\n" << std::endl;
 
   estimator.latest_state();
-  std::cout << "\nstarting odom callback\n" << std::endl;
-  reading_odom->x = 0.1;
-  reading_odom->y = 0.1;
-  reading_odom->x_dot = 0.0;
-  reading_odom->y_dot = 0.0;
-  estimator.callback_odometry(reading_odom);
-  std::cout << "\nodom callback ended\n" << std::endl;
+
 
   std::cout << "\nstarting imu callback\n" << std::endl;
   reading_imu->time = 2.0;
@@ -114,6 +119,14 @@ int main() {
   reading_imu->y_accel = -1.0;
   estimator.callback_imu(reading_imu);
   std::cout << "\nending imu callback\n" << std::endl;
+
+  std::cout << "\nstarting odom callback\n" << std::endl;
+  reading_odom->x = 0.5;
+  reading_odom->y = 0.5;
+  reading_odom->x_dot = -1.0;
+  reading_odom->y_dot = -1.0;
+  estimator.callback_odometry(reading_odom);
+  std::cout << "\nodom callback ended\n" << std::endl;
 
   std::cout << "\nstarting camera callback\n" << std::endl;
   estimator.callback_cm(camera_reading, "Camera 1");
