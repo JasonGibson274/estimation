@@ -2,6 +2,8 @@
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/slam/BetweenFactor.h>
 
+#include <yaml-cpp/yaml.h>
+
 using namespace std;
 using namespace gtsam;
 
@@ -17,9 +19,6 @@ namespace estimator {
     debug_ = estimator_config.debug;
     last_imu_time_ = estimator_config.time;
     prior_config_ = estimator_config.priorConfig;
-
-    // init the set of Values passed to GTSAM during optimization
-    vel_change_accum_ = Vector3(0,0,0);
 
     // Construct parameters for ISAM optimizer
     isam_parameters_.relinearizeThreshold = estimator_config.isamParameters.relinearizeThreshold;
@@ -39,13 +38,12 @@ namespace estimator {
       noiseModel::Isotropic::Sigma(2, estimator_config.cameraFactorParams.pixelNoise);  // one pixel in u and v
 
     // IMU
-    // TODO IMU config
     use_imu_factors_ = estimator_config.imuFactorParams.useImuFactor;
     invert_x_ = estimator_config.imuFactorParams.invertX;
     invert_y_ = estimator_config.imuFactorParams.invertY;
     invert_z_ = estimator_config.imuFactorParams.invertZ;
     Vector6 covvec;
-    std::array<double, 6> covvec_arr = estimator_config.imuFactorParams.biasNoise;
+    std::vector<double> covvec_arr = estimator_config.imuFactorParams.biasNoise;
     covvec << covvec_arr[0], covvec_arr[1], covvec_arr[2], covvec_arr[3], covvec_arr[4], covvec_arr[5];
     bias_noise_ = noiseModel::Diagonal::Variances(covvec);
 
@@ -77,18 +75,167 @@ namespace estimator {
 
     // pose factor noise
     use_pose_factors_ = estimator_config.poseFactorParams.usePoseFactor;
-    std::array<double, 3> odom_vel_arr = estimator_config.poseFactorParams.poseVelNoise;
+    std::vector<double> odom_vel_arr = estimator_config.poseFactorParams.poseVelNoise;
     Vector3 odom_vel_noise = Vector3(odom_vel_arr[0],odom_vel_arr[1],odom_vel_arr[2]);
     std::cout << "odom vel noise = " << odom_vel_noise << std::endl;
     odometry_vel_noise_ = noiseModel::Diagonal::Sigmas(odom_vel_noise);
     Vector6 pose_noise;
-    std::array<double, 6> pose_noise_arr = estimator_config.poseFactorParams.poseNoise;
+    std::vector<double> pose_noise_arr = estimator_config.poseFactorParams.poseNoise;
     pose_noise << pose_noise_arr[0], pose_noise_arr[1], pose_noise_arr[2], pose_noise_arr[3], pose_noise_arr[4], pose_noise_arr[5];
     std::cout << "pose noise = " << pose_noise << std::endl;
     odometry_pose_noise_ = noiseModel::Diagonal::Sigmas(pose_noise);
 
     // add the priors on state
     add_priors(estimator_config.priorConfig.initial_state);
+  }
+
+
+  FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
+    YAML::Node config = YAML::LoadFile(config_file);
+
+    if(config["factorGraphEstimator"]) {
+      config = config["factorGraphEstimator"];
+    }
+
+    debug_ = alphapilot::get<bool>("debug", config, false);
+    last_imu_time_ = alphapilot::get<double>("startTime", config, 0.0);
+    if(config["priorConfig"]) {
+      YAML::Node prior_config = config["priorConfig"];
+      // TODO initial state
+      std::vector<double> state = alphapilot::get<std::vector<double>>("initial_state", prior_config,
+          {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+      prior_config_.initial_state.x = state[0];
+      prior_config_.initial_state.y = state[1];
+      prior_config_.initial_state.z = state[2];
+
+      prior_config_.initial_state.qw = state[3];
+      prior_config_.initial_state.qx = state[4];
+      prior_config_.initial_state.qy = state[5];
+      prior_config_.initial_state.qw = state[6];
+
+      prior_config_.initial_state.x_dot = state[7];
+      prior_config_.initial_state.y_dot = state[8];
+      prior_config_.initial_state.z_dot = state[9];
+
+      prior_config_.initial_vel_noise = alphapilot::get<double>("initial_vel_noise", prior_config, 0.1);
+      prior_config_.initial_bias_noise = alphapilot::get<double>("initial_bias_noise", prior_config, 0.1);
+      prior_config_.initial_pose_noise = alphapilot::get<std::vector<double>>("initial_pose_noise", prior_config,
+                                                                              {0.05, 0.05, 0.05, 0.25, 0.25, 0.25});
+    }
+
+    // Construct parameters for ISAM optimizer
+    if(config["isamParameters"]) {
+      YAML::Node isam_config = config["isamParameters"];
+      isam_parameters_.relinearizeThreshold = alphapilot::get<double>("relinearizeThreshold", isam_config, 0.01);
+      isam_parameters_.relinearizeSkip = alphapilot::get<int>("relinearizeSkip", isam_config, 1);
+      isam_parameters_.enablePartialRelinearizationCheck = alphapilot::get<bool>("enablePartialRelinearizationCheck",
+          isam_config, false);
+      isam_parameters_.cacheLinearizedFactors = alphapilot::get<bool>("cacheLinearizedFactors", isam_config, false);
+      isam_parameters_.enableDetailedResults = alphapilot::get<bool>("enableDetailedResults", isam_config, true);
+      isam_parameters_.findUnusedFactorSlots = alphapilot::get<bool>("findUnusedFactorSlots", isam_config, false);
+      gtsam::ISAM2GaussNewtonParams optimizationParams;
+      optimizationParams.wildfireThreshold = alphapilot::get<double>("gaussianWildfireThreshold", isam_config, 0.001);
+      isam_parameters_.optimizationParams = optimizationParams;
+    }
+    isam_ = ISAM2(isam_parameters_);
+
+
+    if(config["cameraFactorParams"]) {
+      YAML::Node camera_config = config["cameraFactorParams"];
+      // camera
+      use_camera_factors_ = alphapilot::get<bool>("cameraFactorParams", camera_config, false);
+      cam_measurement_noise_ =
+      noiseModel::Isotropic::Sigma(2, alphapilot::get<double>("pixelNoise", camera_config, 10.0));  // one pixel in u and v
+
+      // load cameras
+      std::vector<std::string> camera_names = alphapilot::get<std::vector<std::string>>("cameraNames", camera_config, {});
+      for(auto & camera_name : camera_names) {
+        std::shared_ptr<alphapilot::transform> trans = std::make_shared<alphapilot::transform>();
+        std::vector<double> transform = alphapilot::get<std::vector<double>>("transform", config[camera_name],
+            {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0});
+        trans->x = transform[0];
+        trans->y = transform[1];
+        trans->z = transform[2];
+
+        trans->qw = transform[3];
+        trans->x = transform[4];
+        trans->qy = transform[5];
+        trans->qz = transform[6];
+
+        std::shared_ptr<alphapilot::camera_info> cam_info = std::make_shared<alphapilot::camera_info>();
+
+        std::vector<double> K = alphapilot::get<std::vector<double>>("K", config[camera_name],
+            {0.0, 0.0, 0.0, 1.0, 0.0});
+
+        cam_info->fx = K[0];
+        cam_info->fy = K[1];
+        cam_info->s = K[2];
+        cam_info->u0 = K[3];
+        cam_info->v0 = K[4];
+
+        register_camera(camera_name, trans, cam_info);
+      }
+    }
+
+    if(config["imuFactorParams"]) {
+      YAML::Node imu_config = config["imuFactorParams"];
+
+      // IMU
+      use_imu_factors_ = alphapilot::get<bool>("debug", imu_config, false);
+      invert_x_ = alphapilot::get<bool>("invertX", imu_config, false);
+      invert_y_ = alphapilot::get<bool>("invertY", imu_config, false);
+      invert_z_ = alphapilot::get<bool>("invertZ", imu_config, false);
+      Vector6 covvec;
+      std::vector<double> covvec_arr = alphapilot::get<std::vector<double>>("biasNoise", imu_config,
+          {0.1, 0.1, 0.1, 0.1, 0.1, 0.1});
+      covvec << covvec_arr[0], covvec_arr[1], covvec_arr[2], covvec_arr[3], covvec_arr[4], covvec_arr[5];
+      bias_noise_ = noiseModel::Diagonal::Variances(covvec);
+
+      // setup IMU preintegrator parameters
+      boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedU(GRAVITY);
+      double accel_noise_sigma = alphapilot::get<double>("accelNoiseSigma", imu_config, 2.0);
+      double gyro_noise_sigma = alphapilot::get<double>("gyroNoiseSigma", imu_config, 0.1);
+      double accel_bias_rw_sigma = alphapilot::get<double>("accelBiasRwSigma", imu_config, 0.1);
+      double gyro_bias_rw_sigma = alphapilot::get<double>("gyroBiasRwSigma", imu_config, 0.1);
+      Matrix33 measured_acc_cov = Matrix33::Identity(3,3) * pow(accel_noise_sigma,2);
+      Matrix33 measured_omega_cov = Matrix33::Identity(3,3) * pow(gyro_noise_sigma,2);
+      // error committed in integrating position from velocities
+      Matrix33 integration_error_cov = Matrix33::Identity(3,3)* alphapilot::get<double>("integrationErrorCov", imu_config, 1e-4);
+      Matrix33 bias_acc_cov = Matrix33::Identity(3,3) * pow(accel_bias_rw_sigma,2);
+      Matrix33 bias_omega_cov = Matrix33::Identity(3,3) * pow(gyro_bias_rw_sigma,2);
+      // error in the bias used for preintegration
+      Matrix66 bias_acc_omega_int = Matrix::Identity(6,6)*alphapilot::get<double>("biasAccOmageInt", imu_config, 0.1);
+
+      // add them to the params
+      p->accelerometerCovariance = measured_acc_cov; // acc white noise in continuous
+      p->integrationCovariance = integration_error_cov; // integration uncertainty continuous
+      p->gyroscopeCovariance = measured_omega_cov; // gyro white noise in continuous
+      p->biasAccCovariance = bias_acc_cov; // acc bias in continuous
+      p->biasOmegaCovariance = bias_omega_cov; // gyro bias in continuous
+      p->biasAccOmegaInt = bias_acc_omega_int;
+
+      // use regular preintegrated
+      preintegrator_imu_ = PreintegratedImuMeasurements(p, gtsam::imuBias::ConstantBias());
+    }
+
+    if(config["poseFactorParams"]) {
+      YAML::Node pose_config = config["poseFactorParams"];
+      // pose factor noise
+      use_pose_factors_ = alphapilot::get<bool>("usePoseFactor", pose_config, true);
+      std::vector<double> odom_vel_arr = alphapilot::get<std::vector<double>>("poseVelNoise", pose_config, {0.3, 0.3, 0.3});
+      Vector3 odom_vel_noise = Vector3(odom_vel_arr[0],odom_vel_arr[1],odom_vel_arr[2]);
+      std::cout << "odom vel noise = " << odom_vel_noise << std::endl;
+      odometry_vel_noise_ = noiseModel::Diagonal::Sigmas(odom_vel_noise);
+      Vector6 pose_noise;
+      std::vector<double> pose_noise_arr = alphapilot::get<std::vector<double>>("poseNoise", pose_config,
+          {0.25, 0.25, 0.25, 0.25, 0.25, 0.25});
+      pose_noise << pose_noise_arr[0], pose_noise_arr[1], pose_noise_arr[2], pose_noise_arr[3], pose_noise_arr[4], pose_noise_arr[5];
+      std::cout << "pose noise = " << pose_noise << std::endl;
+      odometry_pose_noise_ = noiseModel::Diagonal::Sigmas(pose_noise);
+    }
+
+    // add the priors on state
+    add_priors(prior_config_.initial_state);
   }
 
   /**
@@ -447,6 +594,10 @@ namespace estimator {
     current_position_guess_ = Pose3(Rot3::Quaternion(initial_state.qw, initial_state.qx, initial_state.qy, initial_state.qz),
             Point3(initial_state.x,initial_state.y,initial_state.z));
     current_velocity_guess_ = Vector3(initial_state.x_dot, initial_state.y_dot, initial_state.z_dot);
+
+    // init the set of Values passed to GTSAM during optimization
+    vel_change_accum_ = Vector3(0,0,0);
+
     Vector6 bias_tmp;
     bias_tmp << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     std::cout << "bias temp = " << current_bias_guess_ << std::endl;
@@ -464,7 +615,7 @@ namespace estimator {
     // create priors on the state
 
     // Assemble prior noise model and add it the graph.
-    std::array<double, 6> pose_noise_arr = prior_config_.initial_pose_noise;
+    std::vector<double> pose_noise_arr = prior_config_.initial_pose_noise;
     noiseModel::Diagonal::shared_ptr pose_noise_model = noiseModel::Diagonal::Sigmas((Vector(6)
             << pose_noise_arr[0], pose_noise_arr[1], pose_noise_arr[2], pose_noise_arr[3], pose_noise_arr[4], pose_noise_arr[5]).finished()); // rad,rad,rad,m, m, m
     if(debug_) {

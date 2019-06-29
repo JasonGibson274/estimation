@@ -22,6 +22,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 
 #include <StateEstimator/estimation/Estimator.h>
 
+#include <yaml-cpp/yaml.h>
 
 // TODO make callbacks pass by const reference to shared pointer
 namespace alphapilot {
@@ -59,13 +60,13 @@ namespace estimator {
     bool invertZ = false;
 
     // bias noise
-    std::array<double, 6> biasNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
+    std::vector<double> biasNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
   };
 
   struct pose_factor_params {
     bool usePoseFactor = true;
-    std::array<double, 6> poseNoise = {0.25, 0.25, 0.25, 0.25, 0.25, 0.25};
-    std::array<double, 3> poseVelNoise = {0.3, 0.3, 0.3};
+    std::vector<double> poseNoise = {0.25, 0.25, 0.25, 0.25, 0.25, 0.25};
+    std::vector<double> poseVelNoise = {0.3, 0.3, 0.3};
   };
 
   struct camera_factor_params {
@@ -76,7 +77,7 @@ namespace estimator {
   struct prior_config {
     drone_state initial_state;
     double initial_vel_noise = 0.1;
-    std::array<double, 6> initial_pose_noise = {0.05, 0.05, 0.05, 0.25, 0.25, 0.25};//rad, rad, rad, m,m,m
+    std::vector<double> initial_pose_noise = {0.05, 0.05, 0.05, 0.25, 0.25, 0.25};//rad, rad, rad, m,m,m
     double initial_bias_noise = 0.1;
   };
 
@@ -95,6 +96,10 @@ namespace estimator {
 class FactorGraphEstimator : Estimator {
 public:
   explicit FactorGraphEstimator(const estimator_config &estimator_config);
+
+#if ENABLE_YAML
+  FactorGraphEstimator(const std::string &config_file);
+#endif
 
   virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data, std::string camera_name);
   // TODO: Figure out what data structure is used for range finders

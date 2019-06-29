@@ -80,6 +80,12 @@ else()
 	message(WARNING "No GTSAM Found. Most plugins and executables will not build.")
 endif()
 
+find_package(yaml-cpp)
+if (yaml-cpp_FOUND)
+	include_directories(${YAML_CPP_INCLUDE_DIR})
+	add_definitions(-DENABLE_YAML=1)
+endif ()
+
 # Add our source code
 include_directories(${PROJECT_SOURCE_DIR}/include)
 

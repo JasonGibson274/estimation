@@ -9,29 +9,7 @@ using namespace alphapilot;
 using namespace gtsam;
 
 int main() {
-  estimator_config config;
-  config.time = 0.0;
-  config.priorConfig.initial_state.z = 1.0;
-  config.priorConfig.initial_state.qx = 0.0;
-  config.priorConfig.initial_state.qy = 0.0;
-  config.priorConfig.initial_state.qz = 0.0;
-  config.priorConfig.initial_state.qw = 1.0;
-  config.debug = true;
-  config.imuFactorParams.useImuFactor = true;
-  config.cameraFactorParams.useCameraFactor = true;
-  config.poseFactorParams.usePoseFactor = true;
-
-  // pose factor
-  config.poseFactorParams.poseNoise = {5.0, 5.0, 5.0, 5.0, 5.0, 5.0};
-  config.poseFactorParams.poseVelNoise = {5.0, 5.0, 5.0};
-
-  //parameter tuning IMU
-  config.imuFactorParams.accelNoiseSigma = 0.1;
-  config.imuFactorParams.gyroNoiseSigma = 0.01;
-  config.imuFactorParams.accelBiasRwSigma = 0.01;
-  config.imuFactorParams.gyroBiasRwSigma = 0.01;
-
-  FactorGraphEstimator estimator(config);
+  FactorGraphEstimator estimator("/home/jgibson37/Documents/alpha_pilot/estimation/config/config.yaml");
   //estimator.resetGraph(config.priorConfig.initial_state);
   std::cout << "\ninit ended\n" << std::endl;
 
