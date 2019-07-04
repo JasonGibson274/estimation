@@ -416,12 +416,16 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
   }
 }
 
-std::vector<std::array<double, 3>> FactorGraphEstimator::get_landmark_positions() {
+std::map<std::string, std::array<double, 3>> FactorGraphEstimator::get_landmark_positions() {
   // TODO return variable, set up elsewhere when optimize is called
-  std::vector<std::array<double, 3>> result;
-  //for(auto it = landmark_factors_.begin(); it != landmark_factors_.end(); it++) {
-  //  boost::optional<Point3> point = it->point();
-  //}
+  std::map<std::string, std::array<double, 3>> result;
+  for(auto it = landmark_factors_.begin(); it != landmark_factors_.end(); it++) {
+    boost::optional<Point3> point = it->second->point();
+    if(point) {
+      std::array<double, 3> xyz = {point.get()[0], point.get()[1], point.get()[2]};
+      result.insert(std::pair<std::string, std::array<double, 3>>(it->first, xyz));
+    }
+  }
   return result;
 }
 

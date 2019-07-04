@@ -112,7 +112,7 @@ class FactorGraphEstimator : Estimator {
                                const std::shared_ptr<camera_info> camera_info);
   virtual double get_optimization_time();
 
-  virtual std::vector<std::array<double, 3>> get_landmark_positions();
+  virtual std::map<std::string, std::array<double, 3>> get_landmark_positions();
 
   virtual void run_optimize();
 
