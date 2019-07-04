@@ -37,9 +37,15 @@ factorGraphEstimator:
 
   cameraFactorParams:
     useCameraFactor: true
-    pixelNoise: 10.0
+    defaultPixelNoise: 10.0
 
     cameraNames: [left_left, left_right, right_left, right_right]
+
+    # list of known objects to track, no - allowed
+    objects: [AIRRLogo, GateCorner]
+
+    AIRRLogo_noise: 5
+    GateCorner_noise: 10
 
     left_left:
       # fx, fy, s, u0, v0

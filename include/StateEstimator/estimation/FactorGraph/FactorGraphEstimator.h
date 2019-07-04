@@ -27,87 +27,89 @@ Authors: Bogdan Vlahov and Jason Gibson
 // TODO make callbacks pass by const reference to shared pointer
 namespace alphapilot {
 namespace estimator {
-  struct gtsam_camera {
-    gtsam::Pose3 transform;
-    boost::shared_ptr<gtsam::Cal3_S2> K;
-  };
+struct gtsam_camera {
+  gtsam::Pose3 transform;
+  boost::shared_ptr<gtsam::Cal3_S2> K;
+};
 
-  struct isam_parameters {
-    // https://borg.cc.gatech.edu/sites/edu.borg/html/a00135.html#af5da340f5774c8ccbbdecfc0a5299888
-    double relinearizeThreshold = 0.01;
-    int relinearizeSkip = 1;
-    bool enablePartialRelinearizationCheck = false;
-    bool chacheLinearedFactors = false;
-    bool enableDetailedResults = true;
-    bool findUnusedFactorSlots = false;
-    double gaussianWildfireThreshold = 0.001;
-  };
+struct isam_parameters {
+  // https://borg.cc.gatech.edu/sites/edu.borg/html/a00135.html#af5da340f5774c8ccbbdecfc0a5299888
+  double relinearizeThreshold = 0.01;
+  int relinearizeSkip = 1;
+  bool enablePartialRelinearizationCheck = false;
+  bool chacheLinearedFactors = false;
+  bool enableDetailedResults = true;
+  bool findUnusedFactorSlots = false;
+  double gaussianWildfireThreshold = 0.001;
+};
 
-  struct imu_factor_params {
-    // factor specific
-    double accelNoiseSigma = 2.0;
-    double gyroNoiseSigma = 0.1;
-    double accelBiasRwSigma = 0.1;
-    double gyroBiasRwSigma = 0.1;
-    double integrationErrorCov = 1e-4;
-    double biasAccOmegaInt = 0.1;
+struct imu_factor_params {
+  // factor specific
+  double accelNoiseSigma = 2.0;
+  double gyroNoiseSigma = 0.1;
+  double accelBiasRwSigma = 0.1;
+  double gyroBiasRwSigma = 0.1;
+  double integrationErrorCov = 1e-4;
+  double biasAccOmegaInt = 0.1;
 
-    // general
-    bool useImuFactor = true;
-    int imuBiasIncr = 5;
-    bool invertX = false;
-    bool invertY = false;
-    bool invertZ = false;
+  // general
+  bool useImuFactor = true;
+  int imuBiasIncr = 5;
+  bool invertX = false;
+  bool invertY = false;
+  bool invertZ = false;
 
-    // bias noise
-    std::vector<double> biasNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
-  };
+  // bias noise
+  std::vector<double> biasNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
+};
 
-  struct pose_factor_params {
-    bool usePoseFactor = true;
-    std::vector<double> poseNoise = {0.25, 0.25, 0.25, 0.25, 0.25, 0.25};
-    std::vector<double> poseVelNoise = {0.3, 0.3, 0.3};
-  };
+struct pose_factor_params {
+  bool usePoseFactor = true;
+  std::vector<double> poseNoise = {0.25, 0.25, 0.25, 0.25, 0.25, 0.25};
+  std::vector<double> poseVelNoise = {0.3, 0.3, 0.3};
+};
 
-  struct camera_factor_params {
-    bool useCameraFactor = true;
-    double pixelNoise = 10.0;
-  };
+struct camera_factor_params {
+  bool useCameraFactor = true;
+  double pixelNoise = 10.0;
+};
 
-  struct prior_config {
-    drone_state initial_state;
-    double initial_vel_noise = 0.1;
-    std::vector<double> initial_pose_noise = {0.05, 0.05, 0.05, 0.25, 0.25, 0.25};//rad, rad, rad, m,m,m
-    double initial_bias_noise = 0.1;
-  };
+struct prior_config {
+  drone_state initial_state;
+  double initial_vel_noise = 0.1;
+  std::vector<double> initial_pose_noise = {0.05, 0.05, 0.05, 0.25, 0.25, 0.25};//rad, rad, rad, m,m,m
+  double initial_bias_noise = 0.1;
+};
 
-  struct estimator_config {
-    bool debug = false;
-    // initial time to start the factor graph at
-    double time = 0.0;
-    isam_parameters isamParameters;
-    imu_factor_params imuFactorParams;
-    pose_factor_params poseFactorParams;
-    camera_factor_params cameraFactorParams;
-    prior_config priorConfig;
-  };
-
+struct estimator_config {
+  bool debug = false;
+  // initial time to start the factor graph at
+  double time = 0.0;
+  isam_parameters isamParameters;
+  imu_factor_params imuFactorParams;
+  pose_factor_params poseFactorParams;
+  camera_factor_params cameraFactorParams;
+  prior_config priorConfig;
+};
 
 class FactorGraphEstimator : Estimator {
-public:
+ public:
   explicit FactorGraphEstimator(const estimator_config &estimator_config);
 
 #if ENABLE_YAML
   FactorGraphEstimator(const std::string &config_file);
 #endif
 
-  virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data, std::string camera_name);
+  virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data,
+                           std::string camera_name);
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(const int rangestuff);
   virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);
   virtual void callback_odometry(const std::shared_ptr<drone_state> odom_data);
   virtual void resetGraph(const drone_state &state);
-  virtual void register_camera(const std::string name, const std::shared_ptr<transform> transform, const std::shared_ptr<camera_info> camera_info);
+  virtual void register_camera(const std::string name,
+                               const std::shared_ptr<transform> transform,
+                               const std::shared_ptr<camera_info> camera_info);
   virtual double get_optimization_time();
 
   virtual std::vector<std::array<double, 3>> get_landmark_positions();
@@ -116,11 +118,11 @@ public:
 
   drone_state latest_state() override;
 
-private:
-	virtual void add_imu_factor();
-	virtual void add_pose_factor();
-	virtual void add_priors(const drone_state &initial_state);
-	virtual void add_factors();
+ private:
+  virtual void add_imu_factor();
+  virtual void add_pose_factor();
+  virtual void add_priors(const drone_state &initial_state);
+  virtual void add_factors();
   void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
 
   // ========== GENERIC VARS =======
@@ -149,56 +151,57 @@ private:
   // ========= POSE FACTOR HELPERS =========
   // number of pose messages
   int pose_message_count_ = 0;
-	// current diff since last optimization for Pose3 between factor
-	gtsam::Rot3 pose_rot_accum_;
-	gtsam::Point3 pose_trans_accum_;
-	// current diff since last optimization for vel between factor
-	gtsam::Vector3 vel_change_accum_;
+  // current diff since last optimization for Pose3 between factor
+  gtsam::Rot3 pose_rot_accum_;
+  gtsam::Point3 pose_trans_accum_;
+  // current diff since last optimization for vel between factor
+  gtsam::Vector3 vel_change_accum_;
   drone_state last_pose_state_;
 
-	// ========= GRAPH GENERICS ===========
-	// current graph that gets updated and cleared after each optimization
-	gtsam::NonlinearFactorGraph current_incremental_graph_;
+  // ========= GRAPH GENERICS ===========
+  // current graph that gets updated and cleared after each optimization
+  gtsam::NonlinearFactorGraph current_incremental_graph_;
   gtsam::ISAM2 isam_;
 
   // mutex locks
-	std::mutex graph_lck_, preintegrator_lck_, pose_lck_;
+  std::mutex graph_lck_, preintegrator_lck_, pose_lck_;
 
-	// index of the current state
+  // index of the current state
   int index_ = 0;
   // index of IMU bias, increments differently based on imu_bias_incr_
-	int bias_index_ = 0;
-	int imu_bias_incr_ = 1;
+  int bias_index_ = 0;
+  int imu_bias_incr_ = 1;
 
-	// Current estimate of the state to be passed into factor graph
-	gtsam::Pose3 current_position_guess_;
-	gtsam::Vector3 current_velocity_guess_;
-	gtsam::imuBias::ConstantBias current_bias_guess_;
+  // Current estimate of the state to be passed into factor graph
+  gtsam::Pose3 current_position_guess_;
+  gtsam::Vector3 current_velocity_guess_;
+  gtsam::imuBias::ConstantBias current_bias_guess_;
 
-	// values to store above
-	gtsam::Values gtsam_current_state_initial_guess_;
+  // values to store above
+  gtsam::Values gtsam_current_state_initial_guess_;
 
-	// ========== PROJECTION FACTOR =============
-	// keeps track of the projection factors for each landmark
-	std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> landmark_factors_;
-	std::map<std::string, gtsam_camera> camera_map;
+  // ========== PROJECTION FACTOR =============
+  // keeps track of the projection factors for each landmark
+  std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> landmark_factors_;
+  std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
+  gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
+  std::map<std::string, gtsam_camera> camera_map;
 
   // ========== IMU ===========================
-	gtsam::PreintegratedImuMeasurements preintegrator_imu_;
-	// the number of IMU messages currently integrated
-	double last_imu_time_;
-	int imu_meas_count_ = 0;
-	bool invert_x_ = false;
+  gtsam::PreintegratedImuMeasurements preintegrator_imu_;
+  // the number of IMU messages currently integrated
+  double last_imu_time_;
+  int imu_meas_count_ = 0;
+  bool invert_x_ = false;
   bool invert_y_ = false;
   bool invert_z_ = false;
   const double GRAVITY = 9.81;
 
-	// ============ NOISE ============
-	// Add the NoiseModels for IMU and Camera and RangeFinder
-	gtsam::noiseModel::Diagonal::shared_ptr cam_measurement_noise_;
-	gtsam::noiseModel::Diagonal::shared_ptr bias_noise_;
-	gtsam::noiseModel::Diagonal::shared_ptr odometry_pose_noise_;
-	gtsam::noiseModel::Diagonal::shared_ptr odometry_vel_noise_;
+  // ============ NOISE ============
+  // Add the NoiseModels for IMU and Camera and RangeFinder
+  gtsam::noiseModel::Diagonal::shared_ptr bias_noise_;
+  gtsam::noiseModel::Diagonal::shared_ptr odometry_pose_noise_;
+  gtsam::noiseModel::Diagonal::shared_ptr odometry_vel_noise_;
 };
 } // estimator
 } // StateEstimator

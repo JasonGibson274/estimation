@@ -16,6 +16,8 @@ namespace estimator {
    * @param initial_state, start location to begin the optimization
    */
   FactorGraphEstimator::FactorGraphEstimator(const estimator_config &estimator_config) {
+    // TODO not supported start anymore
+
     debug_ = estimator_config.debug;
     last_imu_time_ = estimator_config.time;
     prior_config_ = estimator_config.priorConfig;
@@ -34,8 +36,6 @@ namespace estimator {
 
     // camera
     use_camera_factors_ = estimator_config.cameraFactorParams.useCameraFactor;
-    cam_measurement_noise_ =
-      noiseModel::Isotropic::Sigma(2, estimator_config.cameraFactorParams.pixelNoise);  // one pixel in u and v
 
     // IMU
     use_imu_factors_ = estimator_config.imuFactorParams.useImuFactor;
@@ -144,8 +144,8 @@ namespace estimator {
       YAML::Node camera_config = config["cameraFactorParams"];
       // camera
       use_camera_factors_ = alphapilot::get<bool>("cameraFactorParams", camera_config, false);
-      cam_measurement_noise_ =
-      noiseModel::Isotropic::Sigma(2, alphapilot::get<double>("pixelNoise", camera_config, 10.0));  // one pixel in u and v
+      double default_noise = alphapilot::get<double>("defaultPixelNoise", camera_config, 10.0);
+      default_camera_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
 
       // load cameras
       std::vector<std::string> camera_names = alphapilot::get<std::vector<std::string>>("cameraNames", camera_config, {});
@@ -174,6 +174,13 @@ namespace estimator {
         cam_info->v0 = K[4];
 
         register_camera(camera_name, trans, cam_info);
+      }
+
+      std::vector<std::string> object_names = alphapilot::get<std::vector<std::string>>("objects", camera_config, {});
+      for(auto & object_name : object_names) {
+        double noise = alphapilot::get<double>(object_name+"_noise", camera_config, default_noise);
+        gtsam::noiseModel::Diagonal::shared_ptr noise_model = noiseModel::Isotropic::Sigma(2, noise);  // one pixel in u and v
+        object_noises_.insert(std::pair<std::string, gtsam::noiseModel::Diagonal::shared_ptr>(object_name, noise_model));
       }
     }
 
@@ -365,6 +372,8 @@ namespace estimator {
       //std::cout << "adding landmark detection " << seen_landmark.first << ", " << seen_landmark.second.first << ", " << seen_landmark.second.second << std::endl;
       std::string l_id = seen_landmark.first;
       pair<double, double> im_coords = seen_landmark.second;
+      std::string object_type = l_id.substr(0, l_id.find('-'));
+
       auto landmark_factor_it = landmark_factors_.find(l_id);
 
       // New Landmark - Add a new Factor
@@ -375,7 +384,15 @@ namespace estimator {
         //tri_params.landmarkDistanceThreshold = 10;
         //tri_params.dynamicOutlierRejectionThreshold = 100;
         //params.triangulation = tri_params;
-        SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor(new SmartProjectionPoseFactor<Cal3_S2>(cam_measurement_noise_, camera.K, camera.transform));
+        SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor;
+        if(object_noises_.find(l_id) != object_noises_.end()) {
+         smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
+            object_noises_[object_type], camera.K, camera.transform);
+        } else {
+          smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
+              default_camera_noise_, camera.K, camera.transform);
+        }
+
         landmark_factors_[l_id] = smartFactor;
         current_incremental_graph_.push_back(smartFactor);
       }
