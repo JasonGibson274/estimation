@@ -13,19 +13,6 @@ int main() {
   //estimator.resetGraph(config.priorConfig.initial_state);
   std::cout << "\ninit ended\n" << std::endl;
 
-  std::shared_ptr<camera_info> K = std::make_shared<camera_info>();
-  K->fx = 548.4088134765625;
-  K->fy = 548.4088134765625;
-  K->s = 0.0;
-  K->u0 = 512.0;
-  K->v0 = 384.0;
-  std::shared_ptr<transform> transform = std::make_shared<alphapilot::transform>();
-  transform->qw = -0.5;
-  transform->qx = 0.5;
-  transform->qy = -0.5;
-  transform->qz = 0.5;
-  estimator.register_camera("Camera 1", transform, K);
-
   std::cout << "\nstarting odom callback\n" << std::endl;
   std::shared_ptr<drone_state> reading_odom = std::make_shared<drone_state>();
   reading_odom->z = 1.0;
@@ -83,9 +70,9 @@ int main() {
 
   std::cout << "\nstarting camera callback\n" << std::endl;
   std::shared_ptr<std::map<std::string, std::pair<double, double>>> camera_reading = std::make_shared<std::map<std::string, std::pair<double, double>>>();
-  camera_reading->insert(std::make_pair("Gate10-1", std::make_pair(402.281, 195.785)));
-  camera_reading->insert(std::make_pair("Gate12-3", std::make_pair(55.6591, 147.801)));
-  estimator.callback_cm(camera_reading, "Camera 1");
+  camera_reading->insert(std::make_pair("AIRRLogo-1", std::make_pair(402.281, 195.785)));
+  camera_reading->insert(std::make_pair("GateCorner-1", std::make_pair(55.6591, 147.801)));
+  estimator.callback_cm(camera_reading, "left_left");
   std::cout << "\nending camera callback\n" << std::endl;
 
   estimator.latest_state();
@@ -107,9 +94,10 @@ int main() {
   std::cout << "\nodom callback ended\n" << std::endl;
 
   std::cout << "\nstarting camera callback\n" << std::endl;
-  estimator.callback_cm(camera_reading, "Camera 1");
+  estimator.callback_cm(camera_reading, "left");
 
   estimator.latest_state();
+  std::cout << "\n\noptimization time = " << estimator.get_optimization_time() << std::endl;
   std::cout << "\n\nfinished code\n\n" << std::endl;
   /*
   NonlinearFactorGraph current_incremental_graph_;
