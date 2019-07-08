@@ -145,7 +145,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
   if (config["cameraFactorParams"]) {
     YAML::Node camera_config = config["cameraFactorParams"];
     // camera
-    use_camera_factors_ = alphapilot::get<bool>("cameraFactorParams", camera_config, false);
+    use_camera_factors_ = alphapilot::get<bool>("useCameraFactor", camera_config, false);
     double default_noise = alphapilot::get<double>("defaultPixelNoise", camera_config, 10.0);
     default_camera_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
 
@@ -153,20 +153,20 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     std::vector<std::string> camera_names = alphapilot::get<std::vector<std::string>>("cameraNames", camera_config, {});
     for (auto &camera_name : camera_names) {
       std::shared_ptr<alphapilot::transform> trans = std::make_shared<alphapilot::transform>();
-      std::vector<double> transform = alphapilot::get<std::vector<double>>("transform", config[camera_name],
+      std::vector<double> transform = alphapilot::get<std::vector<double>>("transform", camera_config[camera_name],
                                                                            {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0});
       trans->x = transform[0];
       trans->y = transform[1];
       trans->z = transform[2];
 
       trans->qw = transform[3];
-      trans->x = transform[4];
+      trans->qx = transform[4];
       trans->qy = transform[5];
       trans->qz = transform[6];
 
       std::shared_ptr<alphapilot::camera_info> cam_info = std::make_shared<alphapilot::camera_info>();
 
-      std::vector<double> K = alphapilot::get<std::vector<double>>("K", config[camera_name],
+      std::vector<double> K = alphapilot::get<std::vector<double>>("K", camera_config[camera_name],
                                                                    {0.0, 0.0, 0.0, 1.0, 0.0});
 
       cam_info->fx = K[0];
@@ -191,10 +191,12 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     YAML::Node imu_config = config["imuFactorParams"];
 
     // IMU
-    use_imu_factors_ = alphapilot::get<bool>("debug", imu_config, false);
+    use_imu_factors_ = alphapilot::get<bool>("useImuFactor", imu_config, false);
     invert_x_ = alphapilot::get<bool>("invertX", imu_config, false);
     invert_y_ = alphapilot::get<bool>("invertY", imu_config, false);
     invert_z_ = alphapilot::get<bool>("invertZ", imu_config, false);
+
+    imu_bias_incr_ = alphapilot::get<double>("imuBiasIncr", imu_config, 2.0);
     Vector6 covvec;
     std::vector<double> covvec_arr = alphapilot::get<std::vector<double>>("biasNoise", imu_config,
                                                                           {0.1, 0.1, 0.1, 0.1, 0.1, 0.1});
@@ -216,7 +218,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     Matrix33 bias_acc_cov = Matrix33::Identity(3, 3) * pow(accel_bias_rw_sigma, 2);
     Matrix33 bias_omega_cov = Matrix33::Identity(3, 3) * pow(gyro_bias_rw_sigma, 2);
     // error in the bias used for preintegration
-    Matrix66 bias_acc_omega_int = Matrix::Identity(6, 6) * alphapilot::get<double>("biasAccOmageInt", imu_config, 0.1);
+    Matrix66 bias_acc_omega_int = Matrix::Identity(6, 6) * alphapilot::get<double>("biasAccOmegaInt", imu_config, 0.1);
 
     // add them to the params
     p->accelerometerCovariance = measured_acc_cov; // acc white noise in continuous
@@ -263,12 +265,13 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   }
   double dt = 0;
   if (last_imu_time_ == 0) {
-    std::cout << "WARNING: last_imu_time == 0" << std::endl;
+    last_imu_time_ = imu_data->time;
+    return;
   }
   dt = imu_data->time - last_imu_time_;
   last_imu_time_ = imu_data->time;
   if (dt <= 0) {
-    std::cout << "ERROR: cannot use imu reading with 0 dt" << std::endl;
+    std::cout << "ERROR: cannot use imu reading with dt <= 0" << std::endl;
     return;
   }
   position_update_ = true;
@@ -523,7 +526,6 @@ void FactorGraphEstimator::run_optimize() {
  * @param angular_vel in body frame
  * @param dt time difference
  */
-// TODO clean up method
 void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, double dt) {
   //TODO fix IMU motion model to match what is happening in real life
   drone_state result;

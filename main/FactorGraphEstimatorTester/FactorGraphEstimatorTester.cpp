@@ -9,7 +9,7 @@ using namespace alphapilot;
 using namespace gtsam;
 
 int main() {
-  FactorGraphEstimator estimator("/home/jgibson37/Documents/alpha_pilot/estimation/config/config.yaml");
+  FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/config.yaml");
   //estimator.resetGraph(config.priorConfig.initial_state);
   std::cout << "\ninit ended\n" << std::endl;
 
