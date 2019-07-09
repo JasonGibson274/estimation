@@ -16,7 +16,7 @@ public:
    * drone state for other code to use
    * @return
    */
-    virtual alphapilot::drone_state latest_state() {
+    virtual alphapilot::drone_state latest_state(bool optimize=false) {
         return current_pose_estimate_;
     }
 

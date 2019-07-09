@@ -17,7 +17,6 @@ namespace estimator {
  */
 FactorGraphEstimator::FactorGraphEstimator(const estimator_config &estimator_config) {
   // TODO not supported start anymore
-
   debug_ = estimator_config.debug;
   last_imu_time_ = estimator_config.time;
   prior_config_ = estimator_config.priorConfig;
@@ -100,10 +99,9 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
   }
 
   debug_ = alphapilot::get<bool>("debug", config, false);
-  last_imu_time_ = alphapilot::get<double>("startTime", config, 0.0);
+  optimize_hz_ = alphapilot::get<double>("optimizationFrequency", config, 10.0);
   if (config["priorConfig"]) {
     YAML::Node prior_config = config["priorConfig"];
-    // TODO initial state
     std::vector<double> state = alphapilot::get<std::vector<double>>("initial_state", prior_config,
                                                                      {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                                                       0.0});
@@ -149,6 +147,14 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     double default_noise = alphapilot::get<double>("defaultPixelNoise", camera_config, 10.0);
     default_camera_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
 
+    if(!alphapilot::get<bool>("useDegenerateSolutions", camera_config, false)) {
+      projection_params_.setDegeneracyMode(DegeneracyMode::ZERO_ON_DEGENERACY);
+    }
+    projection_params_.setLandmarkDistanceThreshold(alphapilot::get<double>("landmarkDistanceThreshold",
+            camera_config, 10.0));
+    projection_params_.setDynamicOutlierRejectionThreshold(alphapilot::get<double>(
+            "dynamicOutlierRejectionThreshold", camera_config, 10.0));
+
     // load cameras
     std::vector<std::string> camera_names = alphapilot::get<std::vector<std::string>>("cameraNames", camera_config, {});
     for (auto &camera_name : camera_names) {
@@ -192,11 +198,12 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
 
     // IMU
     use_imu_factors_ = alphapilot::get<bool>("useImuFactor", imu_config, false);
+    use_imu_bias_ = alphapilot::get<bool>("useImuBias", imu_config, false);
     invert_x_ = alphapilot::get<bool>("invertX", imu_config, false);
     invert_y_ = alphapilot::get<bool>("invertY", imu_config, false);
     invert_z_ = alphapilot::get<bool>("invertZ", imu_config, false);
 
-    imu_bias_incr_ = alphapilot::get<double>("imuBiasIncr", imu_config, 2.0);
+    imu_bias_incr_ = alphapilot::get<int>("imuBiasIncr", imu_config, 2);
     Vector6 covvec;
     std::vector<double> covvec_arr = alphapilot::get<std::vector<double>>("biasNoise", imu_config,
                                                                           {0.1, 0.1, 0.1, 0.1, 0.1, 0.1});
@@ -260,11 +267,14 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
  * @param imu_data, assumes the accel and angular vel was over the last dt seconds
  */
 void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_data) {
+  if(debug_) {
+    //std::cout << __func__ << std::endl;
+  }
   if (!use_imu_factors_) {
     return;
   }
   double dt = 0;
-  if (last_imu_time_ == 0) {
+  if (last_imu_time_ == -1) {
     last_imu_time_ = imu_data->time;
     return;
   }
@@ -282,8 +292,15 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
 
   // updates the current guesses of position
   Vector3 accel = Vector3(imu_data->x_accel * invert_x, imu_data->y_accel * invert_y, imu_data->z_accel * invert_z);
+  // TODO units??
+  if(use_imu_bias_) {
+    accel += current_bias_guess_.accelerometer();
+  }
   Vector3
       ang_rate = Vector3(imu_data->roll_vel * invert_x, imu_data->pitch_vel * invert_y, imu_data->yaw_vel * invert_z);
+  if(use_imu_bias_) {
+    ang_rate += current_bias_guess_.gyroscope();
+  }
   lock_guard<mutex> preintegration_lck(preintegrator_lck_);
   preintegrator_imu_.integrateMeasurement(accel, ang_rate, dt);
   imu_meas_count_++;
@@ -302,11 +319,15 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
  * to give the optimizer a value to start from
  */
 void FactorGraphEstimator::add_imu_factor() {
+  if(debug_) {
+    std::cout << __func__ << std::endl;
+  }
   if (imu_meas_count_ <= 0) {
     return;
   }
 
   // Update bias at a slower rate
+  lock_guard<mutex> lck(graph_lck_);
   if (index_ % imu_bias_incr_ == 0) {
     bias_index_++;
     Symbol b1 = symbol_shorthand::B(bias_index_ - 1);
@@ -315,16 +336,16 @@ void FactorGraphEstimator::add_imu_factor() {
     // Motion model of bias - currently constant bias is assumed
 
     // Add factor to graph and add initial variable guesses
-    lock_guard<mutex> lck(graph_lck_);
-    current_incremental_graph_.emplace_shared<BetweenFactor<
+    current_incremental_graph_->emplace_shared<BetweenFactor<
         imuBias::ConstantBias>>(b1, b2, imuBias::ConstantBias(),
                                 bias_noise_);
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::B(bias_index_),
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::B(bias_index_),
                                               current_bias_guess_);
   }
 
   preintegrator_lck_.lock();
   // motion model of position and velocity variables
+  std::cout << "creating IMU index at = " << index_ << std::endl;
   ImuFactor imufac(symbol_shorthand::X(index_ - 1),
                    symbol_shorthand::V(index_ - 1),
                    symbol_shorthand::X(index_),
@@ -335,16 +356,16 @@ void FactorGraphEstimator::add_imu_factor() {
   // clear IMU rolling integration
   preintegrator_imu_.resetIntegration();
   imu_meas_count_ = 0;
+  preintegrator_lck_.unlock();
 
   // Add factor to graph and add initial variable guesses
-  lock_guard<mutex> lck(graph_lck_);
-  gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
+  std::cout << "IMU guess at index = " << index_ << std::endl;
+  gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_),
                                             current_position_guess_);
-  gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_),
+  gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_),
                                             current_velocity_guess_);
   // prevents current_vel and pos from being updated
-  preintegrator_lck_.unlock();
-  current_incremental_graph_.add(imufac);
+  current_incremental_graph_->add(imufac);
 }
 
 /**
@@ -363,6 +384,9 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
                                        landmark_data, std::string camera_name) {
 
   // TODO verify that the landmark data is in the camera FOV
+  if(debug_) {
+    std::cout << __func__ << std::endl;
+  }
 
   // if there is no position updates this is unconstrained
   if (!position_update_) {
@@ -381,7 +405,6 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
     return;
   }
   for (const auto &seen_landmark : *landmark_data) {
-    //std::cout << "adding landmark detection " << seen_landmark.first << ", " << seen_landmark.second.first << ", " << seen_landmark.second.second << std::endl;
     std::string l_id = seen_landmark.first;
     pair<double, double> im_coords = seen_landmark.second;
     std::string object_type = l_id.substr(0, l_id.find('-'));
@@ -391,36 +414,42 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
     // New Landmark - Add a new Factor
     if (landmark_factor_it == landmark_factors_.end()) {
       gtsam_camera camera = camera_map[camera_name];
-      //SmartProjectionParams params;
-      //TriangulationParameters tri_params;
-      //tri_params.landmarkDistanceThreshold = 10;
-      //tri_params.dynamicOutlierRejectionThreshold = 100;
-      //params.triangulation = tri_params;
+
       SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor;
       if (object_noises_.find(l_id) != object_noises_.end()) {
         smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
-            object_noises_[object_type], camera.K, camera.transform);
+            object_noises_[object_type], camera.K, camera.transform, projection_params_);
       } else {
         smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
-            default_camera_noise_, camera.K, camera.transform);
+            default_camera_noise_, camera.K, camera.transform, projection_params_);
       }
 
       landmark_factors_[l_id] = smartFactor;
-      current_incremental_graph_.push_back(smartFactor);
+
+      graph_lck_.lock();
+      current_incremental_graph_->push_back(smartFactor);
+      graph_lck_.unlock();
     }
     // Translate detection into gtsam
     Point2 detection_coords(im_coords.first, im_coords.second);
 
     // Add landmark to factor
     graph_lck_.lock();
-    landmark_factors_[l_id]->add(detection_coords,
-                                 symbol_shorthand::X(index_));
+    detection detection;
+    detection.index = index_;
+    detection.point = detection_coords;
+    detection.id = l_id;
+    detections_.push_back(detection);
     graph_lck_.unlock();
   }
 }
 
 std::map<std::string, std::array<double, 3>> FactorGraphEstimator::get_landmark_positions() {
   // TODO return variable, set up elsewhere when optimize is called
+  if(debug_) {
+    //std::cout << __func__ << std::endl;
+  }
+  lock_guard<mutex> graph_lck(graph_lck_);
   std::map<std::string, std::array<double, 3>> result;
   for(auto it = landmark_factors_.begin(); it != landmark_factors_.end(); it++) {
     boost::optional<Point3> point = it->second->point();
@@ -438,22 +467,52 @@ std::map<std::string, std::array<double, 3>> FactorGraphEstimator::get_landmark_
  * This optimizes the entire state trajectory
  */
 void FactorGraphEstimator::run_optimize() {
-  if (current_incremental_graph_.empty()) {
-    std::cerr << "\n\nERROR: cannot optimize over a empty graph\n" << std::endl;
+  if(debug_) {
+    std::cout << __func__ << std::endl;
+  }
+  if(!optimization_lck_.try_lock()) {
+    return;
+  }
+  if (current_incremental_graph_->empty()) {
+    //std::cerr << "ERROR: cannot optimize over a empty graph" << std::endl;
+    optimization_lck_.unlock();
     return;
   }
   position_update_ = false;
+
   // run the optimization and output the final state
-  lock_guard<mutex> graph_lck(graph_lck_);
-  lock_guard<mutex> preintegration_lck(preintegrator_lck_);
+  graph_lck_.lock();
+  latest_state_lck_.lock();
+  std::cout << "starting optimization at " << index_ << std::endl;
+  int temp_index = index_;
+  int temp_bias_index = bias_index_;
+  drone_state previous_state = current_pose_estimate_;
+  Pose3 previous_guess_pose = current_position_guess_;
+  latest_state_lck_.unlock();
+
+  std::shared_ptr<gtsam::NonlinearFactorGraph> graph_copy = current_incremental_graph_;
+  std::shared_ptr<gtsam::Values> guesses_copy = gtsam_current_state_initial_guess_;
+
+  // clear incremental graph and current guesses
+  current_incremental_graph_ = std::make_shared<gtsam::NonlinearFactorGraph>();
+  gtsam_current_state_initial_guess_ = std::make_shared<gtsam::Values>();
+
+  // add the camera factors
+  std::cout << detections_.size() << " held back detections" << std::endl;
+  for(const detection& temp : detections_) {
+    landmark_factors_[temp.id]->add(temp.point, symbol_shorthand::X(temp.index));
+  }
+  detections_.clear();
+
+  graph_lck_.unlock();
 
   if (debug_) {
-    history_.insert(gtsam_current_state_initial_guess_);
-    std::cout << "\n\n guess state guesses" << std::endl;
-    gtsam_current_state_initial_guess_.print();
-    std::cout << "\n\n incremental graph with error" << std::endl;
-    current_incremental_graph_.printErrors(history_);
-    std::cout << "\n\nlandmark factors have " << landmark_factors_.size() << " active factors" << std::endl;
+    history_.insert(*guesses_copy);
+    std::cout << "\nguess state guesses" << std::endl;
+    guesses_copy->print();
+    std::cout << "\nincremental graph with error" << std::endl;
+    graph_copy->printErrors(history_);
+    std::cout << "\nlandmark factors have " << landmark_factors_.size() << " active factors" << std::endl;
     for (auto it = landmark_factors_.begin(); it != landmark_factors_.end(); it++) {
       std::cout << "factor = " << it->first << std::endl;
       it->second->print();
@@ -464,30 +523,81 @@ void FactorGraphEstimator::run_optimize() {
   auto start = std::chrono::steady_clock::now();
 
   // run update and run optimization
-  if (debug_) {
-    std::cout << "\n\ncalling optimize" << std::endl;
-  }
-  isam_.update(current_incremental_graph_, gtsam_current_state_initial_guess_);
+  isam_.update(*graph_copy, *guesses_copy);
+  //for(int i = 0; i < 1000000000; i++) {
+  //  asm("");
+  //}
 
   auto end = std::chrono::steady_clock::now();
   std::chrono::duration<double> diff = end - start;
   optimization_time_ = diff.count();
 
-  // set the guesses of state to the correct output
-  current_position_guess_ = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(index_));
-  current_velocity_guess_ = isam_.calculateEstimate<Vector3>(symbol_shorthand::V(index_));
+  std::cout << "getting locks for updating optimization" << std::endl;
+  if (!use_imu_factors_) {
+    pose_lck_.lock();
+  }
+  preintegrator_lck_.lock();
+  graph_lck_.lock();
+  latest_state_lck_.lock();
+  std::cout << "done getting locks for updating optimization" << std::endl;
+
+  // get the current state
+  drone_state current_state = current_pose_estimate_;
+  std::cout << "current Z = " << current_state.z << std::endl;
+  std::cout << "previous Z = " << previous_state.z << std::endl;
+
+  // calculate the how much the state has changed since we started the optimization
+  gtsam::Quaternion odom_q = gtsam::Quaternion(current_state.qw, current_state.qx,
+          current_state.qy, current_state.qz);
+  odom_q.normalize();
+  gtsam::Quaternion last_pose_q(previous_state.qw, previous_state.qx,
+          previous_state.qy, previous_state.qz);
+  last_pose_q.normalize();
+
+  Rot3 rot_update = Rot3() * traits<gtsam::Quaternion>::Between(last_pose_q, odom_q);
+  Point3 trans_update = Point3(current_state.x - previous_state.x, current_state.y - previous_state.y,
+                               current_state.z - previous_state.z);
+  Pose3 update = Pose3(rot_update, trans_update);
+  std::cout << "update pos = " << update << std::endl;
+  std::cout << "update vel = " <<  gtsam::Vector3(current_state.x_dot, current_state.y_dot, current_state.z_dot)
+          - gtsam::Vector3(previous_state.x_dot, previous_state.y_dot, previous_state.z_dot) << std::endl;
+
+  // set the guesses of state to the correct output, update to account for changes since last optimization
+  std::cout << "temp index = " << temp_index << std::endl;
+  Pose3 local_position_guess = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(temp_index));
+  current_position_guess_.print("\nposition before\n");
+
+  trans_update = Point3(previous_state.x + trans_update.x(),
+          previous_state.y + trans_update.y(), previous_state.z + trans_update.z());
+  // TODO clean up
+  //current_position_guess_ = Pose3(Rot3(rot_update * odom_q), trans_update);
+  current_position_guess_ = previous_guess_pose * update;
+  current_position_guess_ = Pose3(current_position_guess_.rotation(), trans_update);
+  current_position_guess_.print("\nposition after\n");
+
+  current_velocity_guess_ = isam_.calculateEstimate<Vector3>(symbol_shorthand::V(temp_index));
+  std::cout << "\nvelocity before = " << current_velocity_guess_.transpose() << std::endl;
+  current_velocity_guess_ += gtsam::Vector3(current_state.x_dot, current_state.y_dot, current_state.z_dot)
+          - gtsam::Vector3(previous_state.x_dot, previous_state.y_dot, previous_state.z_dot);
+  std::cout << "\nvelocity after = " << current_velocity_guess_.transpose() << std::endl;
   if (use_imu_factors_) {
-    current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_));
+    current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(temp_bias_index));
   }
 
-  if (debug_) {
-    std::cout << "\n\n current position guess" << std::endl;
+  //if (debug_) {
+    std::cout << "\ncurrent position guess" << std::endl;
     current_position_guess_.print();
-    std::cout << "\n\n current velocity guess" << std::endl;
+    std::cout << "\ncurrent velocity guess" << std::endl;
     std::cout << current_velocity_guess_ << std::endl;
     if (use_imu_factors_) {
-      current_bias_guess_.print("\n\nCurrent bias guess");
+      current_bias_guess_.print("\nCurrent bias guess");
     }
+  //}
+
+  graph_lck_.unlock();
+  preintegrator_lck_.unlock();
+  if (!use_imu_factors_) {
+    pose_lck_.unlock();
   }
 
   // set the result to best guess
@@ -503,20 +613,8 @@ void FactorGraphEstimator::run_optimize() {
   current_pose_estimate_.x_dot = current_velocity_guess_[0];
   current_pose_estimate_.y_dot = current_velocity_guess_[1];
   current_pose_estimate_.z_dot = current_velocity_guess_[2];
-
-  // clear incremental graph and current guesses
-  current_incremental_graph_ = NonlinearFactorGraph();
-  gtsam_current_state_initial_guess_.clear();
-  /*
-   * gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
-                                            current_position_guess_);
-  gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_),
-                                            current_velocity_guess_);
-  if(use_imu_factors_) {
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::B(bias_index_),
-                                            current_bias_guess_);
-  }
-   */
+  latest_state_lck_.unlock();
+  optimization_lck_.unlock();
 }
 
 /**
@@ -526,7 +624,11 @@ void FactorGraphEstimator::run_optimize() {
  * @param angular_vel in body frame
  * @param dt time difference
  */
+ // under preintegration lock
 void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, double dt) {
+  if(debug_) {
+    //std::cout << __func__ << std::endl;
+  }
   //TODO fix IMU motion model to match what is happening in real life
   drone_state result;
 
@@ -546,6 +648,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   double pitch_dot = angular_vel[1];
   double yaw_dot = angular_vel[2];
 
+  /*
   if (debug_) {
     std::cout.precision(10);
     std::cout << "===== prop =====" << std::endl;
@@ -558,20 +661,17 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
     std::cout << "rpy before = " << roll << ", " << pitch << ", " << yaw << std::endl;
     std::cout << "vel before = " << x_dot << ", " << y_dot << ", " << z_dot << std::endl;
   }
+  */
 
   //Update angular rate
   result.roll_dot = roll_dot;
   result.pitch_dot = pitch_dot;
   result.yaw_dot = yaw_dot;
 
-  //Position update
-  //result.x = x + x_dot*dt + 0.5*acc[0]*pow(dt, 2);
-  //result.y = y + y_dot*dt + 0.5*acc[1]*pow(dt, 2);
-  //result.z = z + z_dot*dt;// + 0.5*acc[2]*pow(dt, 2);
-
   //Update velocity
   float c_phi, c_theta, c_psi, s_phi, s_theta, s_psi;
   float ux, uy, uz;
+  // TODO convert to quaternions
   c_phi = cosf(roll);
   c_theta = cosf(pitch);
   c_psi = cosf(yaw);
@@ -600,12 +700,28 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
 
   // apply the update
   // the ordering is correct for gtsam
-  //std::cout << "\n\n vel before: \n" << *current_velocity_guess_ << std::endl;
-
   current_position_guess_ = Pose3(Rot3::Ypr(y_result, p_result, r_result),
                                   Point3(result.x, result.y, result.z));
   current_velocity_guess_ = Vector3(result.x_dot, result.y_dot, result.z_dot);
-  //std::cout << "\n\n vel after: \n" << *current_velocity_guess_ << std::endl;
+
+  // prop state forward
+  // set the result to initial guess
+  latest_state_lck_.lock();
+  current_pose_estimate_.x = current_position_guess_.x();
+  current_pose_estimate_.y = current_position_guess_.y();
+  current_pose_estimate_.z = current_position_guess_.z();
+
+  current_pose_estimate_.qw = current_position_guess_.rotation().quaternion()[0];
+  current_pose_estimate_.qx = current_position_guess_.rotation().quaternion()[1];
+  current_pose_estimate_.qy = current_position_guess_.rotation().quaternion()[2];
+  current_pose_estimate_.qz = current_position_guess_.rotation().quaternion()[3];
+
+  current_pose_estimate_.x_dot = current_velocity_guess_[0];
+  current_pose_estimate_.y_dot = current_velocity_guess_[1];
+  current_pose_estimate_.z_dot = current_velocity_guess_[2];
+  latest_state_lck_.unlock();
+
+  /*
   if (debug_) {
     std::cout << "ux = " << ux << ", uy = " << uy << ", uz = " << uz << std::endl;
     std::cout << "===== after ====" << std::endl;
@@ -613,16 +729,27 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
     std::cout << "rpy after = " << r_result << ", " << p_result << ", " << y_result << std::endl;
     std::cout << "vel after = " << result.x_dot << ", " << result.y_dot << ", " << result.z_dot << std::endl;
   }
+  */
 }
 
 void FactorGraphEstimator::callback_range(int rangestuff) {
+  if(debug_) {
+    std::cout << __func__ << std::endl;
+  }
   if (!use_range_factors_) {
     return;
   }
 
 }
 
+// under no locks
 void FactorGraphEstimator::add_priors(const drone_state &initial_state) {
+  if(debug_) {
+    std::cout << __func__ << std::endl;
+  }
+  gtsam_current_state_initial_guess_ = std::make_shared<gtsam::Values>();
+  current_incremental_graph_ = std::make_shared<gtsam::NonlinearFactorGraph>();
+
   current_position_guess_ =
       Pose3(Rot3::Quaternion(initial_state.qw, initial_state.qx, initial_state.qy, initial_state.qz),
             Point3(initial_state.x, initial_state.y, initial_state.z));
@@ -637,12 +764,12 @@ void FactorGraphEstimator::add_priors(const drone_state &initial_state) {
   current_bias_guess_ = imuBias::ConstantBias(bias_tmp);
 
   // insert initial guesses of state
-  gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
+  gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_),
                                             current_position_guess_);
-  gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_),
+  gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_),
                                             current_velocity_guess_);
   if (use_imu_factors_) {
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::B(bias_index_),
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::B(bias_index_),
                                               current_bias_guess_);
   }
   // create priors on the state
@@ -668,14 +795,14 @@ void FactorGraphEstimator::add_priors(const drone_state &initial_state) {
     std::cout << bias_noise_model->sigmas();
   }
   // priors match initial guess
-  current_incremental_graph_.add(PriorFactor<Pose3>(symbol_shorthand::X(index_),
+  current_incremental_graph_->add(PriorFactor<Pose3>(symbol_shorthand::X(index_),
                                                     current_position_guess_,
                                                     pose_noise_model));
-  current_incremental_graph_.add(PriorFactor<Vector3>(symbol_shorthand::V(index_),
+  current_incremental_graph_->add(PriorFactor<Vector3>(symbol_shorthand::V(index_),
                                                       current_velocity_guess_,
                                                       velocity_noise_model));
   if (use_imu_factors_) {
-    current_incremental_graph_.add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_),
+    current_incremental_graph_->add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_),
                                                                       current_bias_guess_,
                                                                       bias_noise_model));
   }
@@ -701,17 +828,21 @@ void FactorGraphEstimator::add_priors(const drone_state &initial_state) {
 
 void FactorGraphEstimator::resetGraph(const drone_state &initial_state) {
   {
-    lock_guard<mutex> graph_lck(graph_lck_);
-    lock_guard<mutex> preintegration_lck(preintegrator_lck_);
+    if(debug_) {
+      std::cout << __func__ << std::endl;
+    }
     lock_guard<mutex> pose_lck(pose_lck_);
+    lock_guard<mutex> preintegration_lck(preintegrator_lck_);
+    lock_guard<mutex> graph_lck(graph_lck_);
+    lock_guard<mutex> latest_state_lck(latest_state_lck_);
 
     //clear
     index_ = 0;
     bias_index_ = 0;
     pose_message_count_ = 0;
     imu_meas_count_ = 0;
-    current_incremental_graph_ = NonlinearFactorGraph();
-    gtsam_current_state_initial_guess_.clear();
+    current_incremental_graph_ = std::make_shared<gtsam::NonlinearFactorGraph>();
+    gtsam_current_state_initial_guess_->clear();
     preintegrator_imu_.resetIntegration();
     isam_ = ISAM2(isam_parameters_);
     history_.clear();
@@ -721,11 +852,27 @@ void FactorGraphEstimator::resetGraph(const drone_state &initial_state) {
   add_priors(initial_state);
 }
 
-drone_state FactorGraphEstimator::latest_state() {
-  if (position_update_) {
+drone_state FactorGraphEstimator::latest_state(bool optimize) {
+  if(debug_) {
+    //std::cout << __func__ << std::endl;
+  }
+  if (position_update_ && optimize) {
     run_optimize();
   }
-  lock_guard<mutex> graph_lck(graph_lck_);
+  lock_guard<mutex> graph_lck(latest_state_lck_);
+  // set the result to best guess
+  current_pose_estimate_.x = current_position_guess_.x();
+  current_pose_estimate_.y = current_position_guess_.y();
+  current_pose_estimate_.z = current_position_guess_.z();
+
+  current_pose_estimate_.qw = current_position_guess_.rotation().quaternion()[0];
+  current_pose_estimate_.qx = current_position_guess_.rotation().quaternion()[1];
+  current_pose_estimate_.qy = current_position_guess_.rotation().quaternion()[2];
+  current_pose_estimate_.qz = current_position_guess_.rotation().quaternion()[3];
+
+  current_pose_estimate_.x_dot = current_velocity_guess_[0];
+  current_pose_estimate_.y_dot = current_velocity_guess_[1];
+  current_pose_estimate_.z_dot = current_velocity_guess_[2];
   return current_pose_estimate_;
 }
 
@@ -734,6 +881,9 @@ drone_state FactorGraphEstimator::latest_state() {
  * @param odom_data
  */
 void FactorGraphEstimator::callback_odometry(const std::shared_ptr<drone_state> odom_data) {
+  if(debug_) {
+    //std::cout << __func__ << std::endl;
+  }
   if (!use_pose_factors_) {
     return;
   }
@@ -760,8 +910,6 @@ void FactorGraphEstimator::callback_odometry(const std::shared_ptr<drone_state> 
 
   Vector3 vel_update(odom_data->x_dot - last_pose_state_.x_dot, odom_data->y_dot - last_pose_state_.y_dot,
                      odom_data->z_dot - last_pose_state_.z_dot);
-  //std::cout << "pose diff " << pos_update << std::endl;
-  noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.2));
 
   vel_change_accum_ += vel_update;
 
@@ -770,11 +918,14 @@ void FactorGraphEstimator::callback_odometry(const std::shared_ptr<drone_state> 
 }
 
 void FactorGraphEstimator::add_pose_factor() {
+  if(debug_) {
+    std::cout << __func__ << std::endl;
+  }
   if (pose_message_count_ <= 0) {
     return;
   }
-  lock_guard<mutex> graph_lck(graph_lck_);
   lock_guard<mutex> pose_lck(pose_lck_);
+  lock_guard<mutex> graph_lck(graph_lck_);
   pose_message_count_ = 0;
 
   // set up the state guesses from odometry if imu is turned off
@@ -783,11 +934,11 @@ void FactorGraphEstimator::add_pose_factor() {
     Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
 
     Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::X(index_),
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_),
                                               Pose3(new_rot, new_point));
 
     Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
-    gtsam_current_state_initial_guess_.insert(symbol_shorthand::V(index_), temp_vel);
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_), temp_vel);
   }
 
 
@@ -796,17 +947,26 @@ void FactorGraphEstimator::add_pose_factor() {
   // transforms the position offset into body frame offset
   Point3 body_trans = current_position_guess_.transformTo(pose_trans_accum_ + current_position_guess_.translation());
 
+
   // assumes that the pose change is in body frame
-  current_incremental_graph_.emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_ - 1),
+  current_incremental_graph_->emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_ - 1),
                                                                   symbol_shorthand::X(index_),
                                                                   Pose3(pose_rot_accum_, body_trans),
                                                                   odometry_pose_noise_);
 
   // add constraint on the velocity
-  current_incremental_graph_.emplace_shared<BetweenFactor<Vector3>>(symbol_shorthand::V(index_ - 1),
+  current_incremental_graph_->emplace_shared<BetweenFactor<Vector3>>(symbol_shorthand::V(index_ - 1),
                                                                     symbol_shorthand::V(index_),
                                                                     vel_change_accum_,
                                                                     odometry_vel_noise_);
+  /*
+  if(debug_) {
+    std::cout << "====== POSE FACTOR =======" << std::endl;
+    std::cout << "vel = " << vel_change_accum_.transpose() << std::endl;
+    std::cout << "rot = " << pose_rot_accum_ << std::endl;
+    std::cout << "translations = " << pose_trans_accum_ << std::endl;
+  }
+  */
 
   vel_change_accum_ = Vector3(0, 0, 0);
   pose_rot_accum_ = Rot3();
@@ -814,6 +974,9 @@ void FactorGraphEstimator::add_pose_factor() {
 }
 
 void FactorGraphEstimator::add_factors() {
+  if(debug_) {
+    std::cout << __func__ << std::endl;
+  }
   if (!position_update_) {
     return;
   }
@@ -825,12 +988,14 @@ void FactorGraphEstimator::add_factors() {
 void FactorGraphEstimator::register_camera(const std::string name,
                                            const std::shared_ptr<transform> transform,
                                            const std::shared_ptr<camera_info> camera_info) {
+  if(debug_) {
+    //std::cout << __func__ << std::endl;
+  }
   if (name.empty()) {
     std::cout << "ERROR: invalid name of camera cannot be empty" << std::endl;
   }
   // TODO validate the camera intrinsics make sense
   gtsam_camera cam;
-  // TODO check this is correct
   // x focal, y focal, skew, center in x, center in y
   cam.K = boost::make_shared<gtsam::Cal3_S2>(camera_info->fx,
                                              camera_info->fy,
@@ -844,6 +1009,10 @@ void FactorGraphEstimator::register_camera(const std::string name,
 
 double FactorGraphEstimator::get_optimization_time() {
   return optimization_time_;
+}
+
+double FactorGraphEstimator::optimize_hz() {
+  return optimize_hz_;
 }
 
 } // estimator

@@ -1,6 +1,6 @@
 factorGraphEstimator:
-  debug: false
-  optimizationFrequency: 5
+  debug: true
+  optimizationFrequency: 10.0
   isamParameters:
     relinearizeThreshold: 0.01
     relinearizeSkip: 1
@@ -13,8 +13,8 @@ factorGraphEstimator:
   imuFactorParams:
     # general
     useImuFactor: true
-    useImuBias: false
-    imuBiasIncr: 5
+    useImuBias: true
+    imuBiasIncr: 1
     invertX: false
     invertY: false
     invertZ: false
@@ -40,16 +40,11 @@ factorGraphEstimator:
     useCameraFactor: true
     defaultPixelNoise: 10.0
 
-    landmarkDistanceThreshold: -1
-    useDegenerateSolutions: false
-    dynamicOutlierRejectionThreshold: -1
-
     cameraNames: [left_left, left_right, right_left, right_right]
 
     # list of known objects to track, no - allowed
-    objects: [ROS, AIRRLogo, GateCorner]
+    objects: [AIRRLogo, GateCorner]
 
-    ROS_noise: 10
     AIRRLogo_noise: 5
     GateCorner_noise: 10
 

@@ -92,6 +92,12 @@ struct estimator_config {
   prior_config priorConfig;
 };
 
+struct detection {
+  std::string id = "";
+  gtsam::Point2 point = gtsam::Point2(-1,-1);
+  int index = 0;
+};
+
 class FactorGraphEstimator : Estimator {
  public:
   explicit FactorGraphEstimator(const estimator_config &estimator_config);
@@ -116,7 +122,9 @@ class FactorGraphEstimator : Estimator {
 
   virtual void run_optimize();
 
-  drone_state latest_state() override;
+  double optimize_hz();
+
+  drone_state latest_state(bool optimize=false) override;
 
  private:
   virtual void add_imu_factor();
@@ -129,6 +137,7 @@ class FactorGraphEstimator : Estimator {
   bool debug_ = true;
   // if any thing has updated the estimate of position
   bool position_update_ = false;
+  double optimize_hz_ = 10;
 
   // how long the most recent optimization took
   double optimization_time_ = 0.0;
@@ -160,11 +169,11 @@ class FactorGraphEstimator : Estimator {
 
   // ========= GRAPH GENERICS ===========
   // current graph that gets updated and cleared after each optimization
-  gtsam::NonlinearFactorGraph current_incremental_graph_;
+  std::shared_ptr<gtsam::NonlinearFactorGraph> current_incremental_graph_;
   gtsam::ISAM2 isam_;
 
   // mutex locks
-  std::mutex graph_lck_, preintegrator_lck_, pose_lck_;
+  std::mutex graph_lck_, preintegrator_lck_, pose_lck_, latest_state_lck_, optimization_lck_;
 
   // index of the current state
   int index_ = 0;
@@ -178,7 +187,7 @@ class FactorGraphEstimator : Estimator {
   gtsam::imuBias::ConstantBias current_bias_guess_;
 
   // values to store above
-  gtsam::Values gtsam_current_state_initial_guess_;
+  std::shared_ptr<gtsam::Values> gtsam_current_state_initial_guess_;
 
   // ========== PROJECTION FACTOR =============
   // keeps track of the projection factors for each landmark
@@ -186,15 +195,18 @@ class FactorGraphEstimator : Estimator {
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
+  std::list<detection> detections_;
+  gtsam::SmartProjectionParams projection_params_;
 
   // ========== IMU ===========================
   gtsam::PreintegratedImuMeasurements preintegrator_imu_;
   // the number of IMU messages currently integrated
-  double last_imu_time_;
+  double last_imu_time_ = -1;
   int imu_meas_count_ = 0;
   bool invert_x_ = false;
   bool invert_y_ = false;
   bool invert_z_ = false;
+  bool use_imu_bias_ = true;
   const double GRAVITY = 9.81;
 
   // ============ NOISE ============
