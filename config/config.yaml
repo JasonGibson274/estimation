@@ -33,8 +33,8 @@ factorGraphEstimator:
   poseFactorParams:
     usePoseFactor: true
     # rad, rad, rad, m, m, m
-    poseNoise: [1.0, 1.0, 1.0, 5.0, 5.0, 5.0]
-    poseVelNoise: [5.0, 5.0, 5.0]
+    poseNoise: [1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+    poseVelNoise: [2.0, 2.0, 2.0]
 
   cameraFactorParams:
     useCameraFactor: true
@@ -87,6 +87,6 @@ factorGraphEstimator:
     initial_state: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     initial_vel_noise: 0.1
     # rad, rad, rad, m, m, m
-    initial_pose_noise: [0.25, 0.25, 0.25, 0.5, 0.5, 0.5]
+    initial_pose_noise: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
     initial_bias_noise: 0.1
 
