@@ -94,6 +94,8 @@ FactorGraphEstimator::FactorGraphEstimator(const estimator_config &estimator_con
 FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
   YAML::Node config = YAML::LoadFile(config_file);
 
+  std::cout << "loading config file from " << config_file << std::endl;
+
   if (config["factorGraphEstimator"]) {
     config = config["factorGraphEstimator"];
   }
@@ -201,6 +203,9 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     // IMU
     use_imu_factors_ = alphapilot::get<bool>("useImuFactor", imu_config, false);
     use_imu_bias_ = alphapilot::get<bool>("useImuBias", imu_config, false);
+
+    std::cout << "IMU being used = " << use_imu_factors_ << std::endl;
+
     invert_x_ = alphapilot::get<bool>("invertX", imu_config, false);
     invert_y_ = alphapilot::get<bool>("invertY", imu_config, false);
     invert_z_ = alphapilot::get<bool>("invertZ", imu_config, false);
@@ -214,7 +219,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
 
     // setup IMU preintegrator parameters
     boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params>
-        p = PreintegratedCombinedMeasurements::Params::MakeSharedU(GRAVITY);
+        p = PreintegratedCombinedMeasurements::Params::MakeSharedU(GRAVITY * (invert_z_ ? -1.0 : 1.0));
     double accel_noise_sigma = alphapilot::get<double>("accelNoiseSigma", imu_config, 2.0);
     double gyro_noise_sigma = alphapilot::get<double>("gyroNoiseSigma", imu_config, 0.1);
     double accel_bias_rw_sigma = alphapilot::get<double>("accelBiasRwSigma", imu_config, 0.1);
@@ -270,11 +275,12 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
  */
 void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_data) {
   if(debug_) {
-    //std::cout << __func__ << std::endl;
+    //std::cout << __LINE__ << std::endl;
   }
   if (!use_imu_factors_) {
     return;
   }
+
   double dt = 0;
   if (last_imu_time_ == -1) {
     last_imu_time_ = imu_data->time;
@@ -282,9 +288,14 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   }
   dt = imu_data->time - last_imu_time_;
   last_imu_time_ = imu_data->time;
-  if (dt <= 0) {
-    std::cout << "ERROR: cannot use imu reading with dt <= 0" << std::endl;
+  if (dt <= 0 || dt > 10) {
+    std::cout << "ERROR: cannot use imu reading with dt <= 0 || dt > 10" << std::endl;
     return;
+  }
+  if((std::fabs(imu_data->x_accel) > 50 || std::fabs(imu_data->y_accel) > 50 || std::fabs(imu_data->z_accel) > 50) ||
+         (std::fabs(imu_data->x_accel) < 1e-6 && std::fabs(imu_data->y_accel) < 1e-6 && std::fabs(imu_data->z_accel) < 1e-6)) {
+	  std::cout << "ignoring IMU since it it too large or all zero" << std::endl;
+	  return;
   }
   position_update_ = true;
   // -1 if invert, 1 if !invert
@@ -310,6 +321,7 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   // integrate the IMU to get an updated estimate of the current position
   // integrate the imu reading using affine dynamics from TODO cite
   propagate_imu(accel, ang_rate, dt);
+  //std::cout << __LINE__ << std::endl;
 }
 
 /**
@@ -665,6 +677,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   }
   */
 
+
   //Update angular rate
   result.roll_dot = roll_dot;
   result.pitch_dot = pitch_dot;
@@ -684,7 +697,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   uy = acc[1] * dt;
   uz = acc[2] * dt;
   result.x_dot = x_dot + (c_theta * c_psi) * ux + (s_phi * s_theta * c_psi - c_phi * s_psi) * uy
-      + (c_phi * s_theta * c_psi + s_phi * s_psi) * uz;
+      + (c_phi 	* s_theta * c_psi + s_phi * s_psi) * uz;
   result.y_dot = y_dot + (c_theta * s_psi) * ux + (s_phi * s_theta * s_psi + c_phi * c_psi) * uy
       + (c_phi * s_theta * s_psi - s_phi * c_psi) * uz;
   result.z_dot = z_dot + (-s_theta) * ux + (c_theta * s_phi) * uy + (c_theta * c_phi) * uz - GRAVITY * dt;
@@ -732,6 +745,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
     std::cout << "vel after = " << result.x_dot << ", " << result.y_dot << ", " << result.z_dot << std::endl;
   }
   */
+
 }
 
 void FactorGraphEstimator::callback_range(int rangestuff) {
