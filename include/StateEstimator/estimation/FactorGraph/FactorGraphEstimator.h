@@ -126,6 +126,10 @@ class FactorGraphEstimator : Estimator {
 
   drone_state latest_state(bool optimize=false) override;
 
+  std::map<int, std::list<alphapilot::Landmark>> group_gates();
+  bool object_in_gate(std::list<alphapilot::Landmark> gate, std::string l_type);
+  bool object_close_to_gate(std::list<alphapilot::Landmark> gate, Landmark l);
+
  private:
   virtual void add_imu_factor();
   virtual void add_pose_factor();
