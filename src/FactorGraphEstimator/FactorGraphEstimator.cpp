@@ -8,8 +8,6 @@
 using namespace std;
 using namespace gtsam;
 
-const double kGravity = 9.81;
-
 namespace alphapilot {
 namespace estimator {
 /**

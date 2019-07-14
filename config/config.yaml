@@ -83,7 +83,7 @@ factorGraphEstimator:
 
 
   priorConfig:
-    # x, y, z, qw, qx, qy, qz, x_dor, y_dot, z_dot
+    # x, y, z, qw, qx, qy, qz, x_dot, y_dot, z_dot
     initial_state: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     initial_vel_noise: 0.1
     # rad, rad, rad, m, m, m
