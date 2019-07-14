@@ -207,7 +207,7 @@ class FactorGraphEstimator : Estimator {
   bool invert_y_ = false;
   bool invert_z_ = false;
   bool use_imu_bias_ = true;
-  const double GRAVITY = -9.81;
+  const double GRAVITY = 9.81;
 
   // ============ NOISE ============
   // Add the NoiseModels for IMU and Camera and RangeFinder

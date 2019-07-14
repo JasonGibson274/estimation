@@ -219,7 +219,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
 
     // setup IMU preintegrator parameters
     boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params>
-        p = PreintegratedCombinedMeasurements::Params::MakeSharedU(GRAVITY * (invert_z_ ? -1.0 : 1.0));
+        p = PreintegratedCombinedMeasurements::Params::MakeSharedU(GRAVITY);
     double accel_noise_sigma = alphapilot::get<double>("accelNoiseSigma", imu_config, 2.0);
     double gyro_noise_sigma = alphapilot::get<double>("gyroNoiseSigma", imu_config, 0.1);
     double accel_bias_rw_sigma = alphapilot::get<double>("accelBiasRwSigma", imu_config, 0.1);
@@ -340,6 +340,8 @@ void FactorGraphEstimator::add_imu_factor() {
     return;
   }
 
+  std::cout << "Adding IMU at  " << index_ << std::endl;
+
   // Update bias at a slower rate
   lock_guard<mutex> lck(graph_lck_);
   if (index_ % imu_bias_incr_ == 0) {
@@ -360,10 +362,10 @@ void FactorGraphEstimator::add_imu_factor() {
   preintegrator_lck_.lock();
   // motion model of position and velocity variables
   std::cout << "creating IMU index at = " << index_ << std::endl;
-  ImuFactor imufac(symbol_shorthand::X(index_ - 1),
-                   symbol_shorthand::V(index_ - 1),
-                   symbol_shorthand::X(index_),
+  ImuFactor imufac(symbol_shorthand::X(index_),
                    symbol_shorthand::V(index_),
+                   symbol_shorthand::X(index_ + 1),
+                   symbol_shorthand::V(index_ + 1),
                    symbol_shorthand::B(bias_index_),
                    preintegrator_imu_);
 
@@ -374,9 +376,9 @@ void FactorGraphEstimator::add_imu_factor() {
 
   // Add factor to graph and add initial variable guesses
   std::cout << "IMU guess at index = " << index_ << std::endl;
-  gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_),
+  gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_ + 1),
                                             current_position_guess_);
-  gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_),
+  gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_ + 1),
                                             current_velocity_guess_);
   // prevents current_vel and pos from being updated
   current_incremental_graph_->add(imufac);
@@ -492,7 +494,6 @@ void FactorGraphEstimator::run_optimize() {
     optimization_lck_.unlock();
     return;
   }
-  position_update_ = false;
 
   // run the optimization and output the final state
   graph_lck_.lock();
@@ -662,7 +663,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   double pitch_dot = angular_vel[1];
   double yaw_dot = angular_vel[2];
 
-  /*
+
   if (debug_) {
     std::cout.precision(10);
     std::cout << "===== prop =====" << std::endl;
@@ -675,7 +676,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
     std::cout << "rpy before = " << roll << ", " << pitch << ", " << yaw << std::endl;
     std::cout << "vel before = " << x_dot << ", " << y_dot << ", " << z_dot << std::endl;
   }
-  */
+
 
 
   //Update angular rate
@@ -736,7 +737,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   current_pose_estimate_.z_dot = current_velocity_guess_[2];
   latest_state_lck_.unlock();
 
-  /*
+
   if (debug_) {
     std::cout << "ux = " << ux << ", uy = " << uy << ", uz = " << uz << std::endl;
     std::cout << "===== after ====" << std::endl;
@@ -744,7 +745,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
     std::cout << "rpy after = " << r_result << ", " << p_result << ", " << y_result << std::endl;
     std::cout << "vel after = " << result.x_dot << ", " << result.y_dot << ", " << result.z_dot << std::endl;
   }
-  */
+
 
 }
 
@@ -950,11 +951,11 @@ void FactorGraphEstimator::add_pose_factor() {
     Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
 
     Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
-    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_),
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_ + 1),
                                               Pose3(new_rot, new_point));
 
     Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
-    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_), temp_vel);
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_ + 1), temp_vel);
   }
 
 
@@ -994,11 +995,14 @@ void FactorGraphEstimator::add_factors() {
     std::cout << __func__ << std::endl;
   }
   if (!position_update_) {
+	std::cout << "position not updated, not adding factors" << std::endl;
     return;
   }
-  index_++;
+  std::cout << "position updated, adding factors" << std::endl;
   add_pose_factor();
   add_imu_factor();
+  index_++;
+  position_update_ = false;
 }
 
 void FactorGraphEstimator::register_camera(const std::string name,
