@@ -3,6 +3,7 @@
 #include <gtsam/slam/BetweenFactor.h>
 
 #include <yaml-cpp/yaml.h>
+#include <alphapilot_common/GateConstraints.h>
 
 using namespace std;
 using namespace gtsam;
@@ -475,6 +476,72 @@ std::map<std::string, std::array<double, 3>> FactorGraphEstimator::get_landmark_
     }
   }
   return result;
+}
+
+std::map<int, std::list<Landmark>> FactorGraphEstimator::group_gates() {
+  auto landmarks = get_landmark_positions();
+  std::map<int, std::list<Landmark>> gates = {};
+  int num_gates = gates.size();
+
+  for (auto landmark : landmarks) {
+    std::string l_id = landmark.first;
+    std::string l_type = l_id.substr(0, l_id.find('-'));
+
+    // Convert to Landmark
+    Landmark new_landmark;
+    new_landmark.id = l_id;
+    new_landmark.type = l_type;
+    new_landmark.position.x = landmark.second[0];
+    new_landmark.position.y = landmark.second[1];
+    new_landmark.position.z = landmark.second[2];
+    // Separate airr logos into top and bottom airr logos
+    if (new_landmark.type == "7" && new_landmark.position.z < 1.5) {
+      new_landmark.type = "8";
+    }
+    bool child_of_gate = false;
+    for (auto gate : gates) {
+      // This landmark type already exists in this gate
+      if (object_in_gate(gate.second, l_type)) {
+        continue;
+      } else if (object_close_to_gate(gate.second, new_landmark)) { // Checks if the landmark is close enough to the subfeatures in the gate
+        // Add landmark to gate
+        gate.second.push_back(new_landmark);
+        child_of_gate = true;
+        // No need to check against other gates so exit
+        break;
+      }
+    }
+    // If this landmark wasn't added to a gate, create a new gate
+    if (!child_of_gate) {
+      num_gates++; // Increment the number of gates
+      std::list<Landmark> new_gate;
+      new_gate.push_back(new_landmark); // add this landmark to the new gate
+      gates[num_gates] = new_gate;
+    }
+  }
+  return gates;
+}
+
+bool FactorGraphEstimator::object_in_gate(std::list<Landmark> gate, std::string l_type) {
+  for (auto subfeature : gate) {
+    // Subfeature type already exists in this gate
+    if (subfeature.type == l_type) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool FactorGraphEstimator::object_close_to_gate(std::list<Landmark> gate, Landmark l) {
+  double tolerance = 0.1; //tolerance in m
+  for (auto subfeature : gate) {
+    double expected_dist = subfeature_dist(subfeature.type, l.type);
+    double actual_dist = alphapilot::dist(subfeature, l);
+    if (abs(actual_dist - expected_dist) < tolerance) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
