@@ -1,6 +1,6 @@
 factorGraphEstimator:
   debug: false
-  optimizationFrequency: 5
+  optimizationFrequency: 100
   useImuProp: true
   isamParameters:
     relinearizeThreshold: 0.01

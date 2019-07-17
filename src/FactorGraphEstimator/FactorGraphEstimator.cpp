@@ -647,8 +647,6 @@ void FactorGraphEstimator::run_optimize() {
 
   // get the current state
   drone_state current_state = current_pose_estimate_;
-  std::cout << "current Z = " << current_state.z << std::endl;
-  std::cout << "previous Z = " << previous_state.z << std::endl;
 
   // calculate the how much the state has changed since we started the optimization
   gtsam::Quaternion odom_q = gtsam::Quaternion(current_state.qw, current_state.qx,
@@ -731,7 +729,7 @@ void FactorGraphEstimator::run_optimize() {
  // under preintegration lock
 void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, double dt) {
   if(debug_) {
-    //std::cout << __func__ << std::endl;
+    std::cout << __func__ << std::endl;
   }
   //TODO fix IMU motion model to match what is happening in real life
   drone_state result;
@@ -1003,7 +1001,6 @@ void FactorGraphEstimator::callback_odometry(const std::shared_ptr<drone_state> 
     Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
 
     Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
-    Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
 
     current_position_guess_ = Pose3(new_rot, new_point);
 
