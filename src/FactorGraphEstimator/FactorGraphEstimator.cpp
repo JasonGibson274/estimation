@@ -401,7 +401,6 @@ void FactorGraphEstimator::add_imu_factor() {
  */
 void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pair<double, double>>>
                                        landmark_data, std::string camera_name) {
-
   // TODO verify that the landmark data is in the camera FOV
   if(debug_) {
     std::cout << __func__ << std::endl;
@@ -417,6 +416,8 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
     std::cout << "ERROR using invalid camera name " << camera_name << " make sure to register a camera first"
               << std::endl;
   }
+  //used to add one
+  int index_adder = 1;
   // mark camera as gotten detections
   got_detections_from_[camera_name] = true;
   // check if we should add factors here
@@ -431,6 +432,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
     for(auto &temp : got_detections_from_) {
       temp.second = false;
     }
+    index_adder = 0;
   }
 
   if (!use_camera_factors_) {
@@ -468,7 +470,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
     // Add landmark to factor
     graph_lck_.lock();
     detection detection;
-    detection.index = index_;
+    detection.index = index_ + index_adder;
     detection.point = detection_coords;
     detection.id = l_id;
     detections_.push_back(detection);
