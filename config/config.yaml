@@ -44,7 +44,7 @@ factorGraphEstimator:
     useDegenerateSolutions: false
     dynamicOutlierRejectionThreshold: -1
 
-    cameraNames: [left_left, left_right, right_left, right_right]
+    cameraNames: [left_left]
 
     # list of known objects to track, no - allowed
     objects: [ROS, AIRRLogo, GateCorner]

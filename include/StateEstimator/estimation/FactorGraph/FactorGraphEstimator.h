@@ -203,6 +203,7 @@ class FactorGraphEstimator : Estimator {
   std::map<std::string, gtsam_camera> camera_map;
   std::list<detection> detections_;
   gtsam::SmartProjectionParams projection_params_;
+  std::map<std::string, bool> got_detections_from_;
 
   // ========== IMU ===========================
   gtsam::PreintegratedImuMeasurements preintegrator_imu_;

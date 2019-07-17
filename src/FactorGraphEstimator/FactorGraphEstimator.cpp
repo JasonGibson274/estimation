@@ -188,6 +188,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
       cam_info->v0 = K[4];
 
       register_camera(camera_name, trans, cam_info);
+      got_detections_from_[camera_name] = false;
     }
 
     std::vector<std::string> object_names = alphapilot::get<std::vector<std::string>>("objects", camera_config, {});
@@ -416,8 +417,21 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
     std::cout << "ERROR using invalid camera name " << camera_name << " make sure to register a camera first"
               << std::endl;
   }
-  // Create newest state
-  add_factors();
+  // mark camera as gotten detections
+  got_detections_from_[camera_name] = true;
+  // check if we should add factors here
+  bool add_factors = true;
+  for(const auto &temp : got_detections_from_) {
+    add_factors = add_factors && temp.second;
+  }
+  if(add_factors) {
+    // create the newest state
+    this->add_factors();
+    // clear what cameras have gotten detections
+    for(auto &temp : got_detections_from_) {
+      temp.second = false;
+    }
+  }
 
   if (!use_camera_factors_) {
     return;
@@ -425,7 +439,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pa
   for (const auto &seen_landmark : *landmark_data) {
     std::string l_id = seen_landmark.first;
     pair<double, double> im_coords = seen_landmark.second;
-    std::string object_type = l_id.substr(0, l_id.find('-'));
+    std::string object_type = l_id.substr(0, l_id.find('_'));
 
     auto landmark_factor_it = landmark_factors_.find(l_id);
 
