@@ -90,7 +90,8 @@ FactorGraphEstimator::FactorGraphEstimator(const estimator_config &estimator_con
   add_priors(estimator_config.priorConfig.initial_state);
 }
 
-FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
+FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const std::string &full_path) {
+
   YAML::Node config = YAML::LoadFile(config_file);
 
   std::cout << "loading config file from " << config_file << std::endl;
@@ -98,6 +99,8 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
   if (config["factorGraphEstimator"]) {
     config = config["factorGraphEstimator"];
   }
+
+  std::freopen(std::string(full_path+"_factor_graph_output.txt").data(),"w",stdout);
 
   debug_ = alphapilot::get<bool>("debug", config, false);
   optimize_hz_ = alphapilot::get<double>("optimizationFrequency", config, 10.0);
@@ -728,7 +731,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   double pitch_dot = angular_vel[1];
   double yaw_dot = angular_vel[2];
 
-
+  /*
   if (debug_) {
     std::cout.precision(10);
     std::cout << "===== prop =====" << std::endl;
@@ -741,6 +744,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
     std::cout << "rpy before = " << roll << ", " << pitch << ", " << yaw << std::endl;
     std::cout << "vel before = " << x_dot << ", " << y_dot << ", " << z_dot << std::endl;
   }
+   */
 
 
 
@@ -803,6 +807,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   latest_state_lck_.unlock();
 
 
+  /*
   if (debug_) {
     std::cout << "ux = " << ux << ", uy = " << uy << ", uz = " << uz << std::endl;
     std::cout << "===== after ====" << std::endl;
@@ -810,6 +815,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
     std::cout << "rpy after = " << r_result << ", " << p_result << ", " << y_result << std::endl;
     std::cout << "vel after = " << result.x_dot << ", " << result.y_dot << ", " << result.z_dot << std::endl;
   }
+   */
 
 
 }
@@ -1031,14 +1037,14 @@ void FactorGraphEstimator::add_pose_factor() {
 
 
   // assumes that the pose change is in body frame
-  current_incremental_graph_->emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_ - 1),
-                                                                  symbol_shorthand::X(index_),
+  current_incremental_graph_->emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_),
+                                                                  symbol_shorthand::X(index_ + 1),
                                                                   Pose3(pose_rot_accum_, body_trans),
                                                                   odometry_pose_noise_);
 
   // add constraint on the velocity
-  current_incremental_graph_->emplace_shared<BetweenFactor<Vector3>>(symbol_shorthand::V(index_ - 1),
-                                                                    symbol_shorthand::V(index_),
+  current_incremental_graph_->emplace_shared<BetweenFactor<Vector3>>(symbol_shorthand::V(index_),
+                                                                    symbol_shorthand::V(index_ + 1),
                                                                     vel_change_accum_,
                                                                     odometry_vel_noise_);
   /*

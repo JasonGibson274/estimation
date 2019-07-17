@@ -19,6 +19,8 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <map>
 #include <mutex>
 #include <memory>
+#include <iostream>
+#include <cstdio>
 
 #include <StateEstimator/estimation/Estimator.h>
 
@@ -103,7 +105,7 @@ class FactorGraphEstimator : Estimator {
   explicit FactorGraphEstimator(const estimator_config &estimator_config);
 
 #if ENABLE_YAML
-  FactorGraphEstimator(const std::string &config_file);
+  FactorGraphEstimator(const std::string &config_file, const std::string& full_path);
 #endif
 
   virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data,
