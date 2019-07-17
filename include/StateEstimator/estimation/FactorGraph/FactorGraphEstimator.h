@@ -144,6 +144,7 @@ class FactorGraphEstimator : Estimator {
   // if any thing has updated the estimate of position
   bool position_update_ = false;
   double optimize_hz_ = 10;
+  bool use_imu_prop_ = true;
 
   // how long the most recent optimization took
   double optimization_time_ = 0.0;

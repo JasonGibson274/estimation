@@ -103,6 +103,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
   std::freopen(std::string(full_path+"_factor_graph_output.txt").data(),"w",stdout);
 
   debug_ = alphapilot::get<bool>("debug", config, false);
+  use_imu_prop_ = alphapilot::get<bool>("useImuProp", config, true);
   optimize_hz_ = alphapilot::get<double>("optimizationFrequency", config, 10.0);
   if (config["priorConfig"]) {
     YAML::Node prior_config = config["priorConfig"];
@@ -323,7 +324,9 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
 
   // integrate the IMU to get an updated estimate of the current position
   // integrate the imu reading using affine dynamics from TODO cite
-  propagate_imu(accel, ang_rate, dt);
+  if(use_imu_prop_) {
+    propagate_imu(accel, ang_rate, dt);
+  }
   //std::cout << __LINE__ << std::endl;
 }
 
@@ -377,14 +380,16 @@ void FactorGraphEstimator::add_imu_factor() {
   imu_meas_count_ = 0;
   preintegrator_lck_.unlock();
 
-  // Add factor to graph and add initial variable guesses
-  std::cout << "IMU guess at index = " << index_ << std::endl;
-  gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_ + 1),
-                                            current_position_guess_);
-  gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_ + 1),
-                                            current_velocity_guess_);
-  // prevents current_vel and pos from being updated
-  current_incremental_graph_->add(imufac);
+  if(use_imu_prop_) {
+    // Add factor to graph and add initial variable guesses
+    std::cout << "IMU guess at index = " << index_ << std::endl;
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_ + 1),
+                                               current_position_guess_);
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_ + 1),
+                                               current_velocity_guess_);
+    // prevents current_vel and pos from being updated
+    current_incremental_graph_->add(imufac);
+  }
 }
 
 /**
@@ -992,8 +997,31 @@ void FactorGraphEstimator::callback_odometry(const std::shared_ptr<drone_state> 
     return;
   }
   // otherwise you can have a between factor of two states that do not exist
-  if (!use_imu_factors_) {
+  if (!use_imu_factors_ || !use_imu_prop_) {
     position_update_ = true;
+    // set up guesses before transforming to body frame for between factor
+    Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
+
+    Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
+    Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
+
+    current_position_guess_ = Pose3(new_rot, new_point);
+
+    current_velocity_guess_ += vel_change_accum_;
+
+    current_pose_estimate_.x = current_position_guess_.x();
+    current_pose_estimate_.y = current_position_guess_.y();
+    current_pose_estimate_.z = current_position_guess_.z();
+
+    current_pose_estimate_.qw = current_position_guess_.rotation().quaternion()[0];
+    current_pose_estimate_.qx = current_position_guess_.rotation().quaternion()[1];
+    current_pose_estimate_.qy = current_position_guess_.rotation().quaternion()[2];
+    current_pose_estimate_.qz = current_position_guess_.rotation().quaternion()[3];
+
+    current_pose_estimate_.x_dot = current_velocity_guess_[0];
+    current_pose_estimate_.y_dot = current_velocity_guess_[1];
+    current_pose_estimate_.z_dot = current_velocity_guess_[2];
+    latest_state_lck_.unlock();
   }
   lock_guard<mutex> pose_lck(pose_lck_);
 
@@ -1033,7 +1061,7 @@ void FactorGraphEstimator::add_pose_factor() {
   pose_message_count_ = 0;
 
   // set up the state guesses from odometry if imu is turned off
-  if (!use_imu_factors_) {
+  if (!use_imu_factors_ || !use_imu_prop_) {
     // set up guesses before transforming to body frame for between factor
     Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
 
