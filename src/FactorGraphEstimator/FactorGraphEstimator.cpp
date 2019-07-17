@@ -398,9 +398,8 @@ void FactorGraphEstimator::add_imu_factor() {
  *
  * @param map<landmark_id, uv_coords> landmark_data
  */
- // uuid -> camera -> detection
-void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, map<std::string, pair<double, double>>>>
-                                       landmark_data) {
+void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, pair<double, double>>>
+                                       landmark_data, std::string camera_name) {
 
   // TODO verify that the landmark data is in the camera FOV
   if(debug_) {
@@ -413,6 +412,10 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, ma
               "Not optimizing otherwise unconstrained optimization" << std::endl;
     return;
   }
+  if (camera_map.find(camera_name) == camera_map.end()) {
+    std::cout << "ERROR using invalid camera name " << camera_name << " make sure to register a camera first"
+              << std::endl;
+  }
   // Create newest state
   add_factors();
 
@@ -421,46 +424,41 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<map<std::string, ma
   }
   for (const auto &seen_landmark : *landmark_data) {
     std::string l_id = seen_landmark.first;
-    std::string object_type = l_id.substr(0, l_id.find('_'));
+    pair<double, double> im_coords = seen_landmark.second;
+    std::string object_type = l_id.substr(0, l_id.find('-'));
 
-    for(auto camera_it = landmark_data->at(l_id).begin(); camera_it != landmark_data->at(l_id).end(); camera_it++) {
-      pair<double, double> im_coords = camera_it->second;
-      std::string camera_name = camera_it->first;
+    auto landmark_factor_it = landmark_factors_.find(l_id);
 
-      auto smart_factor_it = landmark_factors_.find(l_id);
+    // New Landmark - Add a new Factor
+    if (landmark_factor_it == landmark_factors_.end()) {
+      gtsam_camera camera = camera_map[camera_name];
 
-      // New Landmark - Add a new Factor
-      if (smart_factor_it == landmark_factors_.end()) {
-        gtsam_camera camera = camera_map[camera_name];
-
-        SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor;
-        if (object_noises_.find(l_id) != object_noises_.end()) {
-          smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
+      SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor;
+      if (object_noises_.find(l_id) != object_noises_.end()) {
+        smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
             object_noises_[object_type], camera.K, camera.transform, projection_params_);
-        } else {
-          smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
+      } else {
+        smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
             default_camera_noise_, camera.K, camera.transform, projection_params_);
-        }
-
-        landmark_factors_[l_id] = smartFactor;
-
-        graph_lck_.lock();
-        current_incremental_graph_->push_back(smartFactor);
-        graph_lck_.unlock();
       }
-      // Translate detection into gtsam
-      Point2 detection_coords(im_coords.first, im_coords.second);
 
-      // Add landmark to factor
+      landmark_factors_[l_id] = smartFactor;
+
       graph_lck_.lock();
-      detection detection;
-      detection.index = index_;
-      detection.point = detection_coords;
-      detection.id = l_id;
-      detections_.push_back(detection);
+      current_incremental_graph_->push_back(smartFactor);
       graph_lck_.unlock();
     }
+    // Translate detection into gtsam
+    Point2 detection_coords(im_coords.first, im_coords.second);
 
+    // Add landmark to factor
+    graph_lck_.lock();
+    detection detection;
+    detection.index = index_;
+    detection.point = detection_coords;
+    detection.id = l_id;
+    detections_.push_back(detection);
+    graph_lck_.unlock();
   }
 }
 

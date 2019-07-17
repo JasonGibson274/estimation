@@ -108,7 +108,8 @@ class FactorGraphEstimator : Estimator {
   FactorGraphEstimator(const std::string &config_file, const std::string& full_path);
 #endif
 
-  virtual void callback_cm(std::shared_ptr<std::map<std::string, std::map<std::string, std::pair<double, double>>>> landmark_data);
+  virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data,
+                           std::string camera_name);
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(const int rangestuff);
   virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);

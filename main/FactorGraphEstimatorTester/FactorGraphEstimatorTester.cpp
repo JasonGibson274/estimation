@@ -9,7 +9,7 @@ using namespace alphapilot;
 using namespace gtsam;
 
 int main() {
-  FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jason/Documents/alpha_pilot/estimation/build/2019_412");
+  FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jason/Documents/alpha_pilot/estimation/config/2019_412");
   //estimator.resetGraph(config.priorConfig.initial_state);
   std::cout << "\ninit ended\n" << std::endl;
 
@@ -83,15 +83,10 @@ int main() {
 
 
   std::cout << "\nstarting camera callback\n" << std::endl;
-  std::shared_ptr<std::map<std::string, std::map<std::string, std::pair<double, double>>>> camera_reading = std::make_shared<std::map<std::string,std::map<std::string, std::pair<double, double>>>>();
-  std::map<std::string, std::pair<double, double>> camera_detection1;
-  camera_detection1.insert(std::pair<std::string, std::pair<double, double>>("left_left", std::make_pair(402.281, 195.785)));
-  camera_reading->insert(std::make_pair("6_76", camera_detection1));
-
-  std::map<std::string, std::pair<double, double>> camera_detection2;
-  camera_detection2.insert(std::pair<std::string, std::pair<double, double>>("right_right", std::make_pair(402.281, 195.785)));
-  camera_reading->insert(std::make_pair("4_2", camera_detection2));
-  estimator.callback_cm(camera_reading);
+  std::shared_ptr<std::map<std::string, std::pair<double, double>>> camera_reading = std::make_shared<std::map<std::string, std::pair<double, double>>>();
+  camera_reading->insert(std::make_pair("AIRRLogo-1", std::make_pair(402.281, 195.785)));
+  camera_reading->insert(std::make_pair("GateCorner-1", std::make_pair(55.6591, 147.801)));
+  estimator.callback_cm(camera_reading, "left_left");
   std::cout << "\nending camera callback\n" << std::endl;
 
   estimator.latest_state();
@@ -114,7 +109,7 @@ int main() {
   std::cout << "\nodom callback ended\n" << std::endl;
 
   std::cout << "\nstarting camera callback\n" << std::endl;
-  estimator.callback_cm(camera_reading);
+  estimator.callback_cm(camera_reading, "left_left");
 
   estimator.latest_state(true);
   std::cout << "\n\noptimization time = " << estimator.get_optimization_time() << std::endl;
