@@ -1,5 +1,5 @@
 factorGraphEstimator:
-  debug: false
+  debug: true
   optimizationFrequency: 100
   useImuProp: true
   isamParameters:

@@ -573,7 +573,7 @@ bool FactorGraphEstimator::object_close_to_gate(std::list<Landmark> gate, Landma
  */
 void FactorGraphEstimator::run_optimize() {
   if(debug_) {
-    std::cout << __func__ << std::endl;
+    //std::cout << __func__ << std::endl;
   }
   if(!optimization_lck_.try_lock()) {
     return;
@@ -729,7 +729,7 @@ void FactorGraphEstimator::run_optimize() {
  // under preintegration lock
 void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, double dt) {
   if(debug_) {
-    std::cout << __func__ << std::endl;
+    //std::cout << __func__ << std::endl;
   }
   //TODO fix IMU motion model to match what is happening in real life
   drone_state result;
