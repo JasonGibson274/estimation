@@ -1,7 +1,7 @@
 factorGraphEstimator:
   debug: true
-  optimizationFrequency: 100
   useImuProp: true
+  pipeStdout: false
   isamParameters:
     relinearizeThreshold: 0.01
     relinearizeSkip: 1
@@ -10,26 +10,6 @@ factorGraphEstimator:
     enableDetailedResults: true
     findUnusedFactorSlots: false
     gaussianWildfireThreshold: 0.001
-
-  imuFactorParams:
-    # general
-    useImuFactor: true
-    useImuBias: false
-    imuBiasIncr: 5
-    invertX: false
-    invertY: false
-    invertZ: false
-
-    # factor specific
-    accelNoiseSigma: 1.0
-    gyroNoiseSigma: 0.1
-    accelBiasRwSigma: 0.1
-    gyroBiasRwSigma: 0.1
-    integrationErrorCov: 1e-4
-    biasAccOmegaInt: 0.1
-
-    # bias noise
-    biasNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
   poseFactorParams:
     usePoseFactor: true
