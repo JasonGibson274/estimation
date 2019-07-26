@@ -9,7 +9,8 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/geometry/Quaternion.h>
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
-#include <gtsam/slam/SmartProjectionPoseFactor.h>
+#include <gtsam/slam/ProjectionFactor.h>
+#include <gtsam/slam/PriorFactor.h>
 
 #include <alphapilot_common/Utils.h>
 
@@ -20,6 +21,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <cstdio>
 
 #include <yaml-cpp/yaml.h>
+#include <unordered_set>
 
 // TODO make callbacks pass by const reference to shared pointer
 namespace alphapilot {
@@ -90,6 +92,7 @@ class FactorGraphEstimator {
   virtual void register_camera(const std::string name,
                                const std::shared_ptr<transform> transform,
                                const std::shared_ptr<camera_info> camera_info);
+  virtual void aruco_callback(const std::shared_ptr<std::vector<alphapilot::ArucoDetection>> msg, const std::string camera_name);
   virtual double get_optimization_time();
 
   virtual std::map<std::string, std::array<double, 3>> get_landmark_positions();
@@ -122,6 +125,7 @@ class FactorGraphEstimator {
   bool use_range_factors_ = false;
   // even is disabled will create a state in the FG
   bool use_camera_factors_ = true;
+  bool use_aruco_factors_ = true;
 
   // ========= GRAPH GENERICS ===========
   // current graph that gets updated and cleared after each optimization
@@ -129,7 +133,7 @@ class FactorGraphEstimator {
   gtsam::ISAM2 isam_;
 
   // mutex locks
-  std::mutex graph_lck_, pose_lck_, latest_state_lck_, optimization_lck_;
+  std::mutex graph_lck_, pose_lck_, latest_state_lck_, optimization_lck_, landmark_lck_;
 
   // index of the current state
   int index_ = 0;
@@ -139,6 +143,7 @@ class FactorGraphEstimator {
   gtsam::Vector3 current_velocity_guess_;
 
   // values to store above
+  // X = pose, V = velocity, L = (x,y,z) of gate, A = offset to aruco
   std::shared_ptr<gtsam::Values> gtsam_current_state_initial_guess_;
 
   gtsam::ISAM2Params isam_parameters_;
@@ -165,13 +170,19 @@ class FactorGraphEstimator {
 
   // ========== PROJECTION FACTOR =============
   // keeps track of the projection factors for each landmark
-  std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> landmark_factors_;
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
-  std::list<detection> detections_;
-  gtsam::SmartProjectionParams projection_params_;
   std::map<std::string, bool> got_detections_from_;
+  std::map<std::string, std::array<double, 3>> landmark_locations_;
+  std::map<std::string, int> landmark_id_map_;
+  int gate_landmark_index_ = 0;
+
+  gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_noise_;
+  gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_prior_noise_;
+  std::map<std::string, bool> aruco_got_detections_from_;
+  // list of all indexes of aruco we have seen
+  std::unordered_set<int> aruco_indexes_;
 };
 } // estimator
 } // StateEstimator
