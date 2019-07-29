@@ -8,6 +8,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/geometry/SimpleCamera.h>
 #include <gtsam/geometry/Quaternion.h>
 #include <gtsam/navigation/CombinedImuFactor.h>
+#include <gtsam/navigation/ImuFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/slam/ProjectionFactor.h>
 #include <gtsam/slam/PriorFactor.h>
@@ -42,6 +43,26 @@ struct isam_parameters {
   double gaussianWildfireThreshold = 0.001;
 };
 
+struct imu_factor_params {
+  // factor specific
+  double accelNoiseSigma = 2.0;
+  double gyroNoiseSigma = 0.1;
+  double accelBiasRwSigma = 0.1;
+  double gyroBiasRwSigma = 0.1;
+  double integrationErrorCov = 1e-4;
+  double biasAccOmegaInt = 0.1;
+
+  // general
+  bool useImuFactor = true;
+  int imuBiasIncr = 5;
+  bool invertX = false;
+  bool invertY = false;
+  bool invertZ = false;
+
+  // bias noise
+  std::vector<double> biasNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
+};
+
 struct pose_factor_params {
   bool usePoseFactor = true;
   std::vector<double> poseNoise = {0.25, 0.25, 0.25, 0.25, 0.25, 0.25};
@@ -64,6 +85,7 @@ struct estimator_config {
   // initial time to start the factor graph at
   double time = 0.0;
   isam_parameters isamParameters;
+  imu_factor_params imuFactorParams;
   pose_factor_params poseFactorParams;
   camera_factor_params cameraFactorParams;
   prior_config priorConfig;
@@ -77,17 +99,14 @@ struct detection {
 
 class FactorGraphEstimator {
  public:
-  explicit FactorGraphEstimator(const estimator_config &estimator_config);
-
-#if ENABLE_YAML
   FactorGraphEstimator(const std::string &config_file, const std::string& full_path);
-#endif
 
   virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data,
                            std::string camera_name);
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(const int rangestuff);
   virtual void callback_odometry(const std::shared_ptr<drone_state> odom_data);
+  virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);
   virtual void resetGraph(const drone_state &state);
   virtual void register_camera(const std::string name,
                                const std::shared_ptr<transform> transform,
@@ -108,7 +127,8 @@ class FactorGraphEstimator {
  private:
   virtual void add_pose_factor();
   virtual void add_priors(const drone_state &initial_state);
-  virtual void add_factors();
+  virtual void add_imu_factor();
+  void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
@@ -118,22 +138,25 @@ class FactorGraphEstimator {
   alphapilot::drone_state current_pose_estimate_;
 
   // how long the most recent optimization took
+  // TODO create running average
   double optimization_time_ = 0.0;
 
   // flags to determine if factors are used
   bool use_pose_factors_ = true;
   bool use_range_factors_ = false;
-  // even is disabled will create a state in the FG
+  bool use_imu_factors_ = true;
   bool use_camera_factors_ = true;
+  // even is disabled will create a state in the FG
   bool use_aruco_factors_ = true;
 
   // ========= GRAPH GENERICS ===========
   // current graph that gets updated and cleared after each optimization
   std::shared_ptr<gtsam::NonlinearFactorGraph> current_incremental_graph_;
   gtsam::ISAM2 isam_;
+  std::map<int, double> time_map_;
 
   // mutex locks
-  std::mutex graph_lck_, pose_lck_, latest_state_lck_, optimization_lck_, landmark_lck_;
+  std::mutex graph_lck_, pose_lck_, latest_state_lck_, optimization_lck_, landmark_lck_, preintegrator_lck_;
 
   // index of the current state
   int index_ = 0;
@@ -149,6 +172,22 @@ class FactorGraphEstimator {
   gtsam::ISAM2Params isam_parameters_;
   // entire history of the state, only enabled in debug mode
   gtsam::Values history_;
+
+  // ========== IMU ===========================
+  gtsam::PreintegratedImuMeasurements preintegrator_imu_;
+  // the number of IMU messages currently integrated
+  int imu_meas_count_ = 0;
+  double last_imu_time_ = -1;
+  int bias_index_ = 0;
+  int imu_bias_incr_ = 1;
+  bool use_imu_prop_ = true;
+  bool invert_x_ = false;
+  bool invert_y_ = false;
+  bool invert_z_ = false;
+  bool use_imu_bias_ = true;
+  const double GRAVITY = 9.81;
+  gtsam::noiseModel::Diagonal::shared_ptr bias_noise_;
+  gtsam::imuBias::ConstantBias current_bias_guess_;
 
   // ========= PRIOR CONFIG =========
   prior_config prior_config_;
@@ -173,7 +212,6 @@ class FactorGraphEstimator {
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
-  std::map<std::string, bool> got_detections_from_;
   std::map<std::string, std::array<double, 3>> landmark_locations_;
   std::map<std::string, int> landmark_id_map_;
   int gate_landmark_index_ = 0;

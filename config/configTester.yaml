@@ -11,6 +11,26 @@ factorGraphEstimator:
     findUnusedFactorSlots: false
     gaussianWildfireThreshold: 0.001
 
+  imuFactorParams:
+    # general
+    useImuFactor: true
+    useImuBias: true
+    imuBiasIncr: 1
+    invertX: false
+    invertY: false
+    invertZ: false
+
+    # factor specific
+    accelNoiseSigma: 1.0
+    gyroNoiseSigma: 0.1
+    accelBiasRwSigma: 0.1
+    gyroBiasRwSigma: 0.1
+    integrationErrorCov: 1e-4
+    biasAccOmegaInt: 0.1
+
+    # bias noise
+    biasNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+
   poseFactorParams:
     usePoseFactor: true
     # rad, rad, rad, m, m, m
