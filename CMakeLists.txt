@@ -4,6 +4,8 @@ project(StateEstimator)
 # Add custom cmake finds
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
+#add_definitions(-DVERBOSE=0)
+
 # Add macro for subdirectories
 include(MacroSubDirList)
 # Fix needed for linaro gcc compiler according to https://gcc.gnu.org/onlinedocs/gcc/Directory-Options.html

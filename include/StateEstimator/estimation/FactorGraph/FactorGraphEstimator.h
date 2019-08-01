@@ -78,6 +78,7 @@ struct prior_config {
   drone_state initial_state;
   double initial_vel_noise = 0.1;
   std::vector<double> initial_pose_noise = {0.05, 0.05, 0.05, 0.25, 0.25, 0.25};//rad, rad, rad, m,m,m
+  double initial_bias_noise = 0.1;
 };
 
 struct estimator_config {
@@ -97,24 +98,48 @@ struct detection {
   int index = 0;
 };
 
+struct optimization_stats {
+  double optimizationTime = 0.0;
+  double optimizationTimeAvg = 0.0;
+  int optimizationIterations = 0;
+  int variablesReeliminated = 0;
+  int variablesRelinearized = 0;
+  double errorBefore = 0.0;
+  double errorAfter = 0.0;
+};
+
+std::ostream& operator <<(std::ostream& os, const optimization_stats& stats) {
+  os << "\nOptimization Results:\n"
+         << "\nReelimintated: " << stats.variablesReeliminated
+         << "\nRelinearized: " << stats.variablesRelinearized;
+  if(stats.errorBefore) {
+    os << "\nError Before: " << stats.errorBefore;
+  }
+  if(stats.errorAfter) {
+   os << "\nError After : " << stats.errorAfter;
+  }
+  os << "\noptimizationIterations: " << stats.optimizationIterations
+     << "\noptimizationTime: " << stats.optimizationTime
+     << "\noptimizationTimeAvg: " << stats.optimizationTimeAvg;
+  return os;
+};
+
 class FactorGraphEstimator {
  public:
   FactorGraphEstimator(const std::string &config_file, const std::string& full_path);
 
-  virtual void callback_cm(std::shared_ptr<std::map<std::string, std::pair<double, double>>> landmark_data,
-                           std::string camera_name);
+  virtual void callback_cm(std::shared_ptr<alphapilot::GateDetections> detection_data);
   // TODO: Figure out what data structure is used for range finders
   virtual void callback_range(const int rangestuff);
   virtual void callback_odometry(const std::shared_ptr<drone_state> odom_data);
   virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);
-  virtual void resetGraph(const drone_state &state);
   virtual void register_camera(const std::string name,
                                const std::shared_ptr<transform> transform,
                                const std::shared_ptr<camera_info> camera_info);
-  virtual void aruco_callback(const std::shared_ptr<std::vector<alphapilot::ArucoDetection>> msg, const std::string camera_name);
-  virtual double get_optimization_time();
+  virtual void aruco_callback(const std::shared_ptr<alphapilot::ArucoDetections> msg);
+  virtual optimization_stats get_optimization_stats();
 
-  virtual std::map<std::string, std::array<double, 3>> get_landmark_positions();
+  virtual std::vector<alphapilot::Landmark> get_landmark_positions();
 
   virtual void run_optimize();
 
@@ -138,8 +163,7 @@ class FactorGraphEstimator {
   alphapilot::drone_state current_pose_estimate_;
 
   // how long the most recent optimization took
-  // TODO create running average
-  double optimization_time_ = 0.0;
+  optimization_stats optimization_stats_;
 
   // flags to determine if factors are used
   bool use_pose_factors_ = true;
@@ -156,7 +180,12 @@ class FactorGraphEstimator {
   std::map<int, double> time_map_;
 
   // mutex locks
-  std::mutex graph_lck_, pose_lck_, latest_state_lck_, optimization_lck_, landmark_lck_, preintegrator_lck_;
+  std::mutex graph_lck_; // controls isam_ and current_incremental_graph_
+  std::mutex pose_lck_; // controls temp accum variables for pose factor, *accum_
+  std::mutex latest_state_lck_; // controls the current vel and pos guess as well as cur state
+  std::mutex optimization_lck_; // lock to prevent multiple optimization running concurrently
+  std::mutex landmark_lck_; // lock to prevent reading and writing to landmark_locations_
+  std::mutex preintegrator_lck_; // lock to control preintegrator
 
   // index of the current state
   int index_ = 0;
@@ -212,10 +241,14 @@ class FactorGraphEstimator {
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
-  std::map<std::string, std::array<double, 3>> landmark_locations_;
-  std::map<std::string, int> landmark_id_map_;
+  std::vector<alphapilot::Landmark> landmark_locations_;
+  std::map<int, std::string> id_to_landmark_map_;
+  std::map<std::string, int> landmark_to_id_map_;
   int gate_landmark_index_ = 0;
+  // how close a timestamp has to be to the state time
+  double pairing_threshold_ = 0.1;
 
+  // ========== ARUCO FACTOR =============
   gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_noise_;
   gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_prior_noise_;
   std::map<std::string, bool> aruco_got_detections_from_;

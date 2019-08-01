@@ -10,7 +10,6 @@ using namespace gtsam;
 
 int main() {
   FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jason/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
-  //estimator.resetGraph(config.priorConfig.initial_state);
   std::cout << "\ninit ended\n" << std::endl;
 
   std::cout << "\nstarting imu callback\n" << std::endl;
@@ -56,6 +55,8 @@ int main() {
   estimator.callback_imu(reading_imu);
   std::cout << "\nending imu callback\n" << std::endl;
 
+  std::cout << "\nnew position after IMU callbacks:" << estimator.latest_state(false) << std::endl;
+
   std::cout << "\nstarting odom callback\n" << std::endl;
   std::shared_ptr<drone_state> reading_odom = std::make_shared<drone_state>();
   reading_odom->z = 1.0;
@@ -79,12 +80,45 @@ int main() {
   estimator.callback_odometry(reading_odom);
   std::cout << "\nodom callback ended\n" << std::endl;
 
+  std::cout << "\nstarting ARUCO detection callback" << std::endl;
+  std::shared_ptr<alphapilot::ArucoDetections> aruco_reading =
+          std::make_shared<alphapilot::ArucoDetections>();
+  aruco_reading->camera = "left_left";
+  aruco_reading->time = 1.0 + starting_time;
+
+  ArucoDetection aruco_detection;
+  aruco_detection.id = 1;
+  aruco_detection.pose.position.x = 1.0;
+  aruco_detection.pose.position.y = 1.0;
+  aruco_detection.pose.position.z = 1.0;
+
+  aruco_detection.pose.orientation.w = 1.0;
+  aruco_detection.pose.orientation.x = 0.0;
+  aruco_detection.pose.orientation.y = 0.0;
+  aruco_detection.pose.orientation.z = 0.0;
+  aruco_reading->detections.push_back(aruco_detection);
+
+  estimator.aruco_callback(aruco_reading);
+
+  // TODO pose should be different based off of reference frame
+  aruco_reading->camera = "right_right";
+
+  estimator.aruco_callback(aruco_reading);
+  std::cout << "\nending ARUCO detection callback" << std::endl;
+
   std::cout << "\nstarting camera callback\n" << std::endl;
-  std::shared_ptr<std::map<std::string, std::pair<double, double>>> camera_reading = std::make_shared<std::map<std::string, std::pair<double, double>>>();
-  camera_reading->insert(std::make_pair("8_1", std::make_pair(402.281, 195.785)));
-  camera_reading->insert(std::make_pair("3_478", std::make_pair(55.6591, 147.801)));
-  estimator.callback_cm(camera_reading, "left_left");
-  estimator.callback_cm(camera_reading, "right_right");
+  std::shared_ptr<alphapilot::GateDetections> camera_reading = std::make_shared<alphapilot::GateDetections>();
+  camera_reading->time = 1.05 + starting_time;
+  camera_reading->camera_name = "left_left";
+
+  GateDetection gate_detection;
+  gate_detection.type = "7";
+  gate_detection.id = "1";
+  gate_detection.x = 402;
+  gate_detection.y = 195;
+  camera_reading->landmarks.push_back(gate_detection);
+
+  estimator.callback_cm(camera_reading);
   std::cout << "\nending camera callback\n" << std::endl;
 
   estimator.latest_state();
