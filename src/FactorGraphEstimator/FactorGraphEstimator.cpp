@@ -171,6 +171,13 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     }
     aruco_pose_noise_ = noiseModel::Diagonal::Sigmas(aruco_noise);
 
+    // TODO make parameter
+    std::vector<double> aruco_pose_prior_noise_arr = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
+    Vector6 aruco_pose_prior_noise;
+    aruco_pose_prior_noise << aruco_pose_prior_noise_arr[0], aruco_pose_prior_noise_arr[1], aruco_pose_prior_noise_arr[2],
+                              aruco_pose_prior_noise_arr[3], aruco_pose_prior_noise_arr[4], aruco_pose_prior_noise_arr[5];
+    aruco_pose_prior_noise_ = noiseModel::Diagonal::Sigmas(aruco_pose_prior_noise);
+
     std::vector<std::string> camera_names = alphapilot::get<std::vector<std::string>>("enabledCameras", aruco_config, {});
     for (auto &camera_name : camera_names) {
       if(debug_) {
@@ -268,8 +275,21 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
   add_priors(prior_config_.initial_state);
 }
 
+void FactorGraphEstimator::timing_callback(const double timestamp) {
+  if(position_update_) {
+    add_imu_factor();
+    add_pose_factor();
+    lock_guard<mutex> graph_lck(graph_lck_);
+    index_++;
+    position_update_ = false;
+    time_map_.insert(std::make_pair(index_, timestamp));
+  } else {
+    std::cout << "ERROR: no position update before timing callback, not creating a state" << std::endl;
+  }
+}
+
 std::vector<alphapilot::Landmark> FactorGraphEstimator::get_landmark_positions() {
-  lock_guard<mutex> graph_lck(landmark_lck_);
+  lock_guard<mutex> landmark_lck(landmark_lck_);
   return landmark_locations_;
 }
 
@@ -441,7 +461,7 @@ for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
     new_landmark.position.z = landmark.z();
     std::string typeAndId = id_to_landmark_map_[i];
     new_landmark.type = typeAndId.substr(0, typeAndId.find("_"));
-    new_landmark.id = typeAndId.substr(typeAndId.find("_"), std::string::npos);
+    new_landmark.id = typeAndId.substr(typeAndId.find("_")+1, std::string::npos);
     if(debug_) {
       std::cout << new_landmark << "\n";
     }
@@ -756,43 +776,26 @@ void FactorGraphEstimator::add_imu_factor() {
 
 // Assumes that there is only a single instance of an ID per camera
 void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::ArucoDetections> msg) {
-  if (!position_update_) {
-    std::cerr << "ERROR: no position updates have happened but aruco was recieved\n" <<
-              "Not optimizing otherwise unconstrained optimization" << std::endl;
+  if(!use_aruco_factors_) {
     return;
   }
+
   if (camera_map.find(msg->camera) == camera_map.end()) {
     std::cout << "ERROR using invalid camera name " << msg->camera << " make sure to register a camera first"
               << std::endl;
   }
-  //used to add one
-  int index_adder = 1;
-  // mark camera as gotten detections
-  aruco_got_detections_from_[msg->camera] = true;
-  // check if we should add factors here
-  bool add_factors = true;
-  for(const auto &temp : aruco_got_detections_from_) {
-    add_factors = add_factors && temp.second;
+  int image_index = -1;
+  for(auto it = time_map_.rbegin(); it != time_map_.rend() && std::abs(it->second - msg->time) < pairing_threshold_; it++) {
+    image_index = it->first;
   }
-  if(add_factors) {
-    // create the newest state
-    index_++;
-    index_adder = 0;
-    add_imu_factor();
-    add_pose_factor();
-    position_update_ = false;
-    // clear what cameras have gotten detections
-    for(auto &temp : aruco_got_detections_from_) {
-      temp.second = false;
-    }
+  if(image_index == -1) {
+    std::cout << "ERROR: invalid index: -1 for the camera on detection callback" << std::endl;
   }
 
   // TODO Timing on this does not make sense, it should only happen on states from the camera
   // create states on each aruco detection
   // TODO track the time for each state index
-  if(!use_aruco_factors_) {
-    return;
-  }
+
 
   lock_guard<mutex> graph_lck(graph_lck_);
 
@@ -812,14 +815,14 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
         std::cout << "creating aruco with id " << detection.id << ": " << transform << std::endl;
       }
       gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(detection.id), transform);
-      current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(detection.id),
-                                                    location,
+      current_incremental_graph_->add(PriorFactor<Pose3>(symbol_shorthand::A(detection.id),
+                                                    transform,
                                                     aruco_pose_prior_noise_));
     }
     aruco_indexes_.insert(detection.id);
 
     // assumes that the pose change is in body frame
-    current_incremental_graph_->emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_ + index_adder),
+    current_incremental_graph_->emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(image_index),
                                                                 symbol_shorthand::A(detection.id),
                                                                 transform,
                                                                 aruco_pose_noise_);
@@ -848,10 +851,13 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
               << std::endl;
   }
 
-  int image_index = 0;
+  int image_index = -1;
   // TODO parameter for threshold
   for(auto it = time_map_.rbegin(); it != time_map_.rend() && std::abs(it->second - landmark_data->time) < pairing_threshold_; it++) {
     image_index = it->first;
+  }
+  if(image_index == -1) {
+    std::cout << "ERROR: invalid index: -1 for the camera on detection callback" << std::endl;
   }
 
   for (const auto &seen_landmark : landmark_data->landmarks) {
@@ -882,6 +888,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
           detection_coords, default_camera_noise_, symbol_shorthand::X(image_index),
           symbol_shorthand::L(id), camera.K, camera.transform);
     }
+    projectionFactor->print();
 
     graph_lck_.lock();
     current_incremental_graph_->push_back(projectionFactor);

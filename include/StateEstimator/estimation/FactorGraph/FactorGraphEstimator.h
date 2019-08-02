@@ -137,6 +137,7 @@ class FactorGraphEstimator {
                                const std::shared_ptr<transform> transform,
                                const std::shared_ptr<camera_info> camera_info);
   virtual void aruco_callback(const std::shared_ptr<alphapilot::ArucoDetections> msg);
+  virtual void timing_callback(const double timestamp);
   virtual optimization_stats get_optimization_stats();
 
   virtual std::vector<alphapilot::Landmark> get_landmark_positions();
@@ -242,6 +243,7 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
   std::vector<alphapilot::Landmark> landmark_locations_;
+  // TODO change to pair of id and type
   std::map<int, std::string> id_to_landmark_map_;
   std::map<std::string, int> landmark_to_id_map_;
   int gate_landmark_index_ = 0;

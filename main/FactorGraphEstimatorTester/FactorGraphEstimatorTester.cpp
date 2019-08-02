@@ -9,7 +9,7 @@ using namespace alphapilot;
 using namespace gtsam;
 
 int main() {
-  FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jason/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
+  FactorGraphEstimator estimator("/home/jgibson37/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jason/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
   std::cout << "\ninit ended\n" << std::endl;
 
   std::cout << "\nstarting imu callback\n" << std::endl;
@@ -79,6 +79,10 @@ int main() {
   reading_odom->x = 0.5;
   estimator.callback_odometry(reading_odom);
   std::cout << "\nodom callback ended\n" << std::endl;
+
+  std::cout << "\nstarting timing callback\n" << std::endl;
+  estimator.timing_callback(1.0 + starting_time);
+  std::cout << "\nending timing callback\n" << std::endl;
 
   std::cout << "\nstarting ARUCO detection callback" << std::endl;
   std::shared_ptr<alphapilot::ArucoDetections> aruco_reading =
