@@ -9,7 +9,7 @@ factorGraphEstimator:
     cacheLinearizedFactors: false
     enableDetailedResults: true
     findUnusedFactorSlots: false
-    gaussianWildfireThreshold: 0.01
+    gaussianWildfireThreshold: 0.001
 
   imuFactorParams:
     # general
@@ -75,10 +75,10 @@ factorGraphEstimator:
     # list of valid objects
     objects: [0, 1, 2, 3, 4, 5, 6, 7, 8]
     objectList:
-      0_noise: 10 # whole gate
-      1_noise: 10 # top left corner
-      2_noise: 10 # top right corner
-      3_noise: 10 # bottom right corner
+      0_noise: 5 # whole gate
+      1_noise: 5 # top left corner
+      2_noise: 5 # top right corner
+      3_noise: 5 # bottom right corner
       4_noise: 2 # bottom left corner
       5_noise: 2 # left logo
       6_noise: 2 # right logo

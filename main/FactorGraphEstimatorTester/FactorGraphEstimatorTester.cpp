@@ -131,13 +131,6 @@ int main() {
   gate_detection2.y = 147.80127;
   camera_reading->landmarks.push_back(gate_detection2);
 
-  GateDetection gate_detection3;
-  gate_detection3.gate = "12";
-  gate_detection3.type = "3";
-  gate_detection3.x = 512;
-  gate_detection3.y = 384;
-  camera_reading->landmarks.push_back(gate_detection3);
-
   estimator.callback_cm(camera_reading);
   std::cout << "\nending camera callback\n" << std::endl;
 

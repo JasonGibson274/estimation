@@ -909,32 +909,35 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
       std::cout << "\n\nERROR: invalid landmark " << seen_landmark << "\n\n" << std::endl;
       return;
     }
-
-    if(debug_) {
-      Pose3 position;
-      bool print = false;
-      if(history_.exists(symbol_shorthand::X(image_index))) {
-        print = true;
-        position = history_.at<Pose3>(symbol_shorthand::X(image_index));
-      }
-      if(!print && gtsam_current_state_initial_guess_->exists(symbol_shorthand::X(image_index))) {
-        print = true;
-        position = gtsam_current_state_initial_guess_->at<Pose3>(symbol_shorthand::X(image_index));
-      }
-      /*
-      // TODO throws exception
-      if(print) {
-        SimpleCamera test_cam(position, *camera.K);
-        alphapilot::Landmark l = landmark_locations_[id];
-        Point3 point = Point3(l.position.x, l.position.y, l.position.z);
-        std::cout << point << std::endl;
-        Point2 measurement = test_cam.project(point);
-        std::cout << "\nGate detection " << seen_landmark << "\n";
-        std::cout << "Detection got: " << detection_coords << "\n"
-                  << "Expected     : " << measurement<< std::endl;
-      }
-       */
+    /*
+  if(debug_) {
+    Pose3 position;
+    bool print = false;
+    if(history_.exists(symbol_shorthand::X(image_index))) {
+      print = true;
+      position = history_.at<Pose3>(symbol_shorthand::X(image_index));
     }
+    if(!print && gtsam_current_state_initial_guess_->exists(symbol_shorthand::X(image_index))) {
+      print = true;
+      position = gtsam_current_state_initial_guess_->at<Pose3>(symbol_shorthand::X(image_index));
+    }
+    // TODO throws exception
+    if(print) {
+      std::cout << "\n\nposition " << position << std::endl;
+      std::cout << "\ncamera transform " << camera.transform << std::endl;
+      position = position.compose(camera.transform);
+      std::cout << "\nposition after " << position << std::endl;
+      PinholeCamera<Cal3_S2> test_cam(position, *camera.K);
+      alphapilot::Landmark l = landmark_locations_[id];
+      Point3 point = Point3(l.position.x, l.position.y, l.position.z);
+      std::cout << "point: " << point << std::endl;
+      Point2 measurement = test_cam.project(point);
+      std::cout << "\nGate detection " << seen_landmark << "\n";
+      std::cout << "Detection got: " << detection_coords << "\n"
+                << "Expected     : " << measurement<< std::endl;
+    }
+  }
+     */
 
     std::cout << "using landmark with id = " << id << " image index: " << image_index << std::endl;
     GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
@@ -942,6 +945,8 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
       projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
           detection_coords, object_noises_[object_type], symbol_shorthand::X(image_index),
           symbol_shorthand::L(id), camera.K, camera.transform);
+      camera.K->print();
+      camera.transform.print();
     } else {
       projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
           detection_coords, default_camera_noise_, symbol_shorthand::X(image_index),
