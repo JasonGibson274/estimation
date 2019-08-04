@@ -3,13 +3,13 @@ factorGraphEstimator:
   useImuProp: true
   pipeStdout: false
   isamParameters:
-    relinearizeThreshold: 0.1
+    relinearizeThreshold: 0.01
     relinearizeSkip: 1
     enablePartialRelinearizationCheck: false
     cacheLinearizedFactors: false
     enableDetailedResults: true
     findUnusedFactorSlots: false
-    gaussianWildfireThreshold: 0.001
+    gaussianWildfireThreshold : 0.001
 
   imuFactorParams:
     # general
@@ -73,21 +73,16 @@ factorGraphEstimator:
     pairingThreshold: 0.02 # allowed time stamp difference
 
     # list of valid objects
-    objects: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    objects: [1, 2, 3, 4]
     objectList:
-      0_noise: 5 # whole gate
-      1_noise: 5 # top left corner
-      2_noise: 5 # top right corner
-      3_noise: 5 # bottom right corner
-      4_noise: 2 # bottom left corner
-      5_noise: 2 # left logo
-      6_noise: 2 # right logo
-      7_noise: 2 # top airr
-      8_noise: 2 # bottom airr
+      1_noise: 10 # top left corner
+      2_noise: 10 # top right corner
+      3_noise: 10 # bottom right corner
+      4_noise: 10 # bottom left corner
 
     # list of known objects to track, no _ allowed
     trackedObjects: []
-    objectPriorNoise: [1.0, 1.0, 1.0]
+    objectPriorNoise: [10.0, 10.0, 10.0]
     # TODO Get the actual prediction
     # Gate#_type#
     objectPriors:
@@ -96,7 +91,7 @@ factorGraphEstimator:
   priorConfig:
     # x, y, z, qw, qx, qy, qz, x_dot, y_dot, z_dot
     initial_state: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    initial_vel_noise: 0.1
+    initial_vel_noise: 0.01
     # rad, rad, rad, m, m, m
     initial_pose_noise: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
     initial_bias_noise: 0.1

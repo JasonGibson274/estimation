@@ -9,7 +9,7 @@ using namespace alphapilot;
 using namespace gtsam;
 
 int main() {
-  FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jason/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
+  FactorGraphEstimator estimator("/home/jgibson37/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
   std::cout << "\ninit ended\n" << std::endl;
 
   std::cout << "\nstarting imu callback\n" << std::endl;
@@ -121,14 +121,14 @@ int main() {
   gate_detection1.gate = "10";
   gate_detection1.type = "1";
   gate_detection1.x = 402.28125;
-  gate_detection1.y = 195.783973;
+  gate_detection1.y = 195.784973145;
   camera_reading->landmarks.push_back(gate_detection1);
 
   GateDetection gate_detection2;
   gate_detection2.gate = "12";
   gate_detection2.type = "3";
-  gate_detection2.x = 55.6590881;
-  gate_detection2.y = 147.80127;
+  gate_detection2.x = 55.6590881348;
+  gate_detection2.y = 147.801269531;
   camera_reading->landmarks.push_back(gate_detection2);
 
   estimator.callback_cm(camera_reading);
@@ -138,7 +138,7 @@ int main() {
   estimator.run_optimize();
   std::cout << "optimized" << std::endl;
 
-  for(int i = 1; i < 1; i++) {
+  for(int i = 1; i < 100; i++) {
     reading_imu->time = 0.1 + starting_time + 0.1 * i;
     reading_imu->x_accel = 0.0;
     reading_imu->y_accel = 0.0;

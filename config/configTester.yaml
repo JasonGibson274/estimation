@@ -46,7 +46,7 @@ factorGraphEstimator:
       K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
 
       # transform x, y, z, qw, qx, qy, qz
-      transform: [0.0, 0.0, 0.0, 0.5, 0.5, -0.5, 0.5]
+      transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
 
     right_right:
       # fx, fy, s, u0, v0
@@ -91,8 +91,8 @@ factorGraphEstimator:
     # TODO Get the actual prediction
     # Gate#_type#
     objectPriors:
-      12_3: [16.83319, 16.21931, 9.143364]
-      10_1: [16.35111, 3.63155, 7.229498]
+      12_3: [18.90706, 15.73291, 9.14324]
+      10_1: [18.15111, 3.631447, 7.229498]
 
   priorConfig:
     # x, y, z, qw, qx, qy, qz, x_dot, y_dot, z_dot

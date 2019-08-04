@@ -463,10 +463,11 @@ for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
     std::string typeAndId = id_to_landmark_map_[i];
     new_landmark.id = typeAndId.substr(0, typeAndId.find("_"));
     new_landmark.type = typeAndId.substr(typeAndId.find("_")+1, std::string::npos);
-
+    /*
     if(debug_) {
       std::cout << "id = " << i << " " << new_landmark << "\n";
     }
+     */
     landmark_locations_.insert(std::make_pair(i, new_landmark));
   }
   landmark_lck_.unlock();
@@ -589,18 +590,18 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
 
   // updates the current guesses of position
   Vector3 accel = Vector3(imu_data->x_accel * invert_x, imu_data->y_accel * invert_y, imu_data->z_accel * invert_z);
-  // TODO units??
-  if(use_imu_bias_) {
-    accel += current_bias_guess_.accelerometer();
-  }
   Vector3
           ang_rate = Vector3(imu_data->roll_vel * invert_x, imu_data->pitch_vel * invert_y, imu_data->yaw_vel * invert_z);
-  if(use_imu_bias_) {
-    ang_rate += current_bias_guess_.gyroscope();
-  }
   lock_guard<mutex> preintegration_lck(preintegrator_lck_);
   preintegrator_imu_.integrateMeasurement(accel, ang_rate, dt);
   imu_meas_count_++;
+
+  if(use_imu_bias_) {
+    accel -= current_bias_guess_.accelerometer();
+  }
+  if(use_imu_bias_) {
+    ang_rate -= current_bias_guess_.gyroscope();
+  }
 
   // integrate the IMU to get an updated estimate of the current position
   if(use_imu_prop_) {
@@ -867,6 +868,7 @@ void FactorGraphEstimator::add_projection_prior(std::shared_ptr<Landmark> msg) {
  * @param map<landmark_id, uv_coords> landmark_data
  */
 void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> landmark_data) {
+  std::cout << __func__ << std::endl;
 
   if (!use_camera_factors_) {
     return;
@@ -881,6 +883,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
 
   int image_index = -1;
   // TODO parameter make helper method
+  std::cout << std::setprecision(15) << "finding state close to " << landmark_data->time << std::endl;
   for(auto it = time_map_.rbegin(); it != time_map_.rend() && std::abs(it->second - landmark_data->time) < pairing_threshold_; it++) {
     if(std::abs(it->second - landmark_data->time) < pairing_threshold_) {
       image_index = it->first;
@@ -891,6 +894,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
     std::cout << "ERROR: invalid index: -1 for the camera on detection callback" << std::endl;
     return;
   }
+  std::cout << std::setprecision(15) << "found timestamp close " << time_map_[image_index] << std::endl;
 
   for (const auto &seen_landmark : landmark_data->landmarks) {
     std::string l_id = seen_landmark.gate+"_"+seen_landmark.type;
@@ -910,43 +914,41 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
       return;
     }
     /*
-  if(debug_) {
-    Pose3 position;
-    bool print = false;
-    if(history_.exists(symbol_shorthand::X(image_index))) {
-      print = true;
-      position = history_.at<Pose3>(symbol_shorthand::X(image_index));
-    }
-    if(!print && gtsam_current_state_initial_guess_->exists(symbol_shorthand::X(image_index))) {
-      print = true;
-      position = gtsam_current_state_initial_guess_->at<Pose3>(symbol_shorthand::X(image_index));
-    }
-    // TODO throws exception
-    if(print) {
-      std::cout << "\n\nposition " << position << std::endl;
-      std::cout << "\ncamera transform " << camera.transform << std::endl;
-      position = position.compose(camera.transform);
-      std::cout << "\nposition after " << position << std::endl;
-      PinholeCamera<Cal3_S2> test_cam(position, *camera.K);
-      alphapilot::Landmark l = landmark_locations_[id];
-      Point3 point = Point3(l.position.x, l.position.y, l.position.z);
-      std::cout << "point: " << point << std::endl;
-      Point2 measurement = test_cam.project(point);
-      std::cout << "\nGate detection " << seen_landmark << "\n";
-      std::cout << "Detection got: " << detection_coords << "\n"
-                << "Expected     : " << measurement<< std::endl;
-    }
-  }
-     */
+    if(debug_) {
+      Pose3 position;
+      bool print = false;
+      if(history_.exists(symbol_shorthand::X(image_index))) {
+        print = true;
+        position = history_.at<Pose3>(symbol_shorthand::X(image_index));
+      }
+      if(!print && gtsam_current_state_initial_guess_->exists(symbol_shorthand::X(image_index))) {
+        print = true;
+        position = gtsam_current_state_initial_guess_->at<Pose3>(symbol_shorthand::X(image_index));
+      }
+      // TODO throws exception
+      if(print) {
+        //std::cout << "\n\nposition " << position << std::endl;
+        //std::cout << "\ncamera transform " << camera.transform << std::endl;
+        position = position.compose(camera.transform);
+        //std::cout << "\nposition after " << position << std::endl;
+        PinholeCamera<Cal3_S2> test_cam(position, *camera.K);
+        alphapilot::Landmark l = landmark_locations_[id];
+        Point3 point = Point3(l.position.x, l.position.y, l.position.z);
+        //std::cout << "point: " << point << std::endl;
+        Point2 measurement = test_cam.project(point);
+        std::cout << "Landmark: " << l << std::endl;
+        std::cout << "\nGate detection " << seen_landmark << "\n";
+        std::cout << "Detection got: " << detection_coords << "\n"
+                  << "Expected     : " << measurement<< std::endl;
 
-    std::cout << "using landmark with id = " << id << " image index: " << image_index << std::endl;
+      }
+    }
+    */
     GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
     if (object_noises_.find(object_type) != object_noises_.end()) {
       projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
           detection_coords, object_noises_[object_type], symbol_shorthand::X(image_index),
           symbol_shorthand::L(id), camera.K, camera.transform);
-      camera.K->print();
-      camera.transform.print();
     } else {
       projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
           detection_coords, default_camera_noise_, symbol_shorthand::X(image_index),
