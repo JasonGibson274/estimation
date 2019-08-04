@@ -173,15 +173,6 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     aruco_pose_prior_noise << aruco_pose_prior_noise_arr[0], aruco_pose_prior_noise_arr[1], aruco_pose_prior_noise_arr[2],
                               aruco_pose_prior_noise_arr[3], aruco_pose_prior_noise_arr[4], aruco_pose_prior_noise_arr[5];
     aruco_pose_prior_noise_ = noiseModel::Diagonal::Sigmas(aruco_pose_prior_noise);
-
-    std::vector<std::string> camera_names = alphapilot::get<std::vector<std::string>>("enabledCameras", aruco_config, {});
-    for (auto &camera_name : camera_names) {
-      if(debug_) {
-        std::cout << camera_name << " enabled for aruco" << std::endl;
-      }
-
-      aruco_got_detections_from_[camera_name] = false;
-    }
   }
 
   if (config["imuFactorParams"]) {
@@ -790,6 +781,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
   if (camera_map.find(msg->camera) == camera_map.end()) {
     std::cout << "ERROR using invalid camera name " << msg->camera << " make sure to register a camera first"
               << std::endl;
+    return;
   }
   int image_index = -1;
   for(auto it = time_map_.rbegin(); it != time_map_.rend() && std::abs(it->second - msg->time) < pairing_threshold_; it++) {
