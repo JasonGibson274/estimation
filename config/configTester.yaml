@@ -14,7 +14,7 @@ factorGraphEstimator:
   imuFactorParams:
     # general
     useImuFactor: true
-    useImuBias: true
+    useImuBias: false
     imuBiasIncr: 1
     invertX: false
     invertY: false
@@ -39,23 +39,9 @@ factorGraphEstimator:
 
   cameraConfig:
     # sets the names of the cameras to be registered
-    cameraNames: [left_left, left_right, right_left, right_right]
+    cameraNames: [left_left, right_right]
 
     left_left:
-      # fx, fy, s, u0, v0
-      K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
-
-      # transform x, y, z, qw, qx, qy, qz
-      transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
-
-    left_right:
-      # fx, fy, s, u0, v0
-      K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
-
-      # transform x, y, z, qw, qx, qy, qz
-      transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
-
-    right_left:
       # fx, fy, s, u0, v0
       K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
 
@@ -78,15 +64,19 @@ factorGraphEstimator:
     #rad, rad, rad, m, m, m
     arucoNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
+    #rad, rad, rad, m, m, m
+    arucoPriorNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+
   projectionFactorParams:
-    useProjectionFactor: true
+    useProjectionFactor: false
     defaultPixelNoise: 10.0
     pairingThreshold: 0.1 # allowed time stamp difference
 
+    # list of valid objects
     objects: [0, 1, 2, 3, 4, 5, 6, 7, 8]
     objectList:
-      0_noise: 5 # whole gate
-      1_noise: 5 # top left corner
+      0_noise: 10 # whole gate
+      1_noise: 10 # top left corner
       2_noise: 10 # top right corner
       3_noise: 10 # bottom right corner
       4_noise: 10 # bottom left corner
@@ -96,13 +86,14 @@ factorGraphEstimator:
       8_noise: 10 # bottom airr
 
     # list of known objects to track, no - allowed
-    trackedObjects: [7_1]
-    objectPriorNoise: [0.1, 0.1, 0.1]
+    trackedObjects: [12_3, 10_1, 5_1]
+    objectPriorNoise: [2.0, 2.0, 2.0]
     # TODO Get the actual prediction
+    # Gate#_type#
     objectPriors:
-      7_1: [10, 0, 0]
-
-
+      12_3: [16.83319, 16.21931, 9.143364]
+      10_1: [16.35111, 3.63155, 7.229498]
+      5_1: [1.0, 0.0, -1.0]
 
   priorConfig:
     # x, y, z, qw, qx, qy, qz, x_dot, y_dot, z_dot

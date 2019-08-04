@@ -150,6 +150,8 @@ class FactorGraphEstimator {
 
   virtual alphapilot::drone_state latest_state(bool optimize=false);
 
+  virtual void add_projection_prior(std::shared_ptr<Landmark> msg);
+
  private:
   virtual void add_pose_factor();
   virtual void add_priors(const drone_state &initial_state);
@@ -242,13 +244,14 @@ class FactorGraphEstimator {
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
-  std::vector<alphapilot::Landmark> landmark_locations_;
+  std::map<int, alphapilot::Landmark> landmark_locations_;
   // TODO change to pair of id and type
   std::map<int, std::string> id_to_landmark_map_;
   std::map<std::string, int> landmark_to_id_map_;
   int gate_landmark_index_ = 0;
   // how close a timestamp has to be to the state time
   double pairing_threshold_ = 0.1;
+  gtsam::noiseModel::Diagonal::shared_ptr landmark_prior_noise_;
 
   // ========== ARUCO FACTOR =============
   gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_noise_;

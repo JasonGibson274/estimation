@@ -3,52 +3,45 @@ factorGraphEstimator:
   useImuProp: true
   pipeStdout: false
   isamParameters:
-    relinearizeThreshold: 0.01
+    relinearizeThreshold: 0.1
     relinearizeSkip: 1
     enablePartialRelinearizationCheck: false
     cacheLinearizedFactors: false
     enableDetailedResults: true
     findUnusedFactorSlots: false
-    gaussianWildfireThreshold: 0.001
+    gaussianWildfireThreshold: 0.01
+
+  imuFactorParams:
+    # general
+    useImuFactor: true
+    useImuBias: true
+    imuBiasIncr: 1
+    invertX: false
+    invertY: false
+    invertZ: false
+
+    # factor specific
+    accelNoiseSigma: 1.0
+    gyroNoiseSigma: 0.1
+    accelBiasRwSigma: 0.1
+    gyroBiasRwSigma: 0.1
+    integrationErrorCov: 1e-4
+    biasAccOmegaInt: 0.1
+
+    # bias noise
+    biasNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
   poseFactorParams:
-    usePoseFactor: true
+    usePoseFactor: false
     # rad, rad, rad, m, m, m
-    poseNoise: [1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
-    poseVelNoise: [2.0, 2.0, 2.0]
+    poseNoise: [1.0, 1.0, 1.0, 5.0, 5.0, 5.0]
+    poseVelNoise: [5.0, 5.0, 5.0]
 
-  cameraFactorParams:
-    useCameraFactor: true
-    defaultPixelNoise: 10.0
-
-    landmarkDistanceThreshold: -1
-    useDegenerateSolutions: false
-    dynamicOutlierRejectionThreshold: -1
-
-    cameraNames: [left_left]
-
-    # list of known objects to track, no - allowed
-    objects: [ROS, AIRRLogo, GateCorner]
-
-    ROS_noise: 10
-    AIRRLogo_noise: 5
-    GateCorner_noise: 10
+  cameraConfig:
+    # sets the names of the cameras to be registered
+    cameraNames: [left_left, right_right]
 
     left_left:
-      # fx, fy, s, u0, v0
-      K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
-
-      # transform x, y, z, qw, qx, qy, qz
-      transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
-
-    left_right:
-      # fx, fy, s, u0, v0
-      K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
-
-      # transform x, y, z, qw, qx, qy, qz
-      transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
-
-    right_left:
       # fx, fy, s, u0, v0
       K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
 
@@ -62,6 +55,43 @@ factorGraphEstimator:
       # transform x, y, z, qw, qx, qy, qz
       transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
 
+  arucoFactorParams:
+    useArucoFactor: true
+
+    # what cameras we will wait for detections from before creating a state
+    enabledCameras: [left_left, right_right]
+
+    #rad, rad, rad, m, m, m
+    arucoNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+
+    #rad, rad, rad, m, m, m
+    arucoPriorNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+
+  projectionFactorParams:
+    useProjectionFactor: true
+    defaultPixelNoise: 10.0
+    pairingThreshold: 0.02 # allowed time stamp difference
+
+    # list of valid objects
+    objects: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    objectList:
+      0_noise: 10 # whole gate
+      1_noise: 10 # top left corner
+      2_noise: 10 # top right corner
+      3_noise: 10 # bottom right corner
+      4_noise: 2 # bottom left corner
+      5_noise: 2 # left logo
+      6_noise: 2 # right logo
+      7_noise: 2 # top airr
+      8_noise: 2 # bottom airr
+
+    # list of known objects to track, no _ allowed
+    trackedObjects: []
+    objectPriorNoise: [1.0, 1.0, 1.0]
+    # TODO Get the actual prediction
+    # Gate#_type#
+    objectPriors:
+      1_1: [10, 0, 0]
 
   priorConfig:
     # x, y, z, qw, qx, qy, qz, x_dot, y_dot, z_dot
@@ -70,4 +100,5 @@ factorGraphEstimator:
     # rad, rad, rad, m, m, m
     initial_pose_noise: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
     initial_bias_noise: 0.1
+
 
