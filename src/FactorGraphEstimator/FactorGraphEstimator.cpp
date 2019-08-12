@@ -1167,9 +1167,7 @@ drone_state FactorGraphEstimator::latest_state(bool optimize) {
   current_pose_estimate_.y_dot = current_velocity_guess_[1];
   current_pose_estimate_.z_dot = current_velocity_guess_[2];
   // TODO Double check this is the best timestamp
-  if (time_map_.size() > 0) {
-    current_pose_estimate_.time = time_map_.rbegin()->second;
-  }
+  current_pose_estimate_.time = last_imu_time_;
   return current_pose_estimate_;
 }
 
