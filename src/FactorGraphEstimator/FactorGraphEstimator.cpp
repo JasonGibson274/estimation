@@ -165,7 +165,8 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     if(debug_) {
       std::cout << "aruco noise = " << aruco_noise.transpose() << std::endl;
     }
-    aruco_pose_noise_ = noiseModel::Diagonal::Sigmas(aruco_noise);
+    double aruco_camera_noise = alphapilot::get<double>("projectionPixelNoise", aruco_config, 10.0);
+    aruco_camera_noise_ = noiseModel::Isotropic::Sigma(2, aruco_camera_noise);
 
     std::vector<double> aruco_pose_prior_noise_arr = alphapilot::get<std::vector<double>>("arucoPriorNoise", aruco_config,
                                                                               {0.25, 0.25, 0.25});
@@ -663,7 +664,6 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
    */
 
   //Update angular rate
-  // TODO IDK about this
   result.roll_dot = roll_dot;
   result.pitch_dot = pitch_dot;
   result.yaw_dot = yaw_dot;
@@ -693,6 +693,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   result.z = z + (result.z_dot + z_dot) / 2 * dt;
 
   //Update the euler angles
+  // overflow of the values are handled by the gtsam constructor
   double r_result, p_result, y_result;
   r_result = roll + (roll_dot + (s_phi * s_theta / c_theta) * pitch_dot + (c_phi * s_theta / c_theta) * yaw_dot) * dt;
   p_result = pitch + (c_phi * pitch_dot - s_phi * yaw_dot) * dt;
@@ -702,6 +703,7 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   // the ordering is correct for gtsam
   current_position_guess_ = Pose3(Rot3::Ypr(y_result, p_result, r_result),
                                   Point3(result.x, result.y, result.z));
+  std::cout << current_position_guess_.rotation().rpy()[0] << std::endl;
   current_velocity_guess_ = Vector3(result.x_dot, result.y_dot, result.z_dot);
 
   // prop state forward
@@ -752,7 +754,6 @@ void FactorGraphEstimator::add_imu_factor() {
     Symbol b2 = symbol_shorthand::B(bias_index_);
 
     // Motion model of bias - currently constant bias is assumed
-    // TODO should bias have prior
     // Add factor to graph and add initial variable guesses
     current_incremental_graph_->emplace_shared<BetweenFactor<
             imuBias::ConstantBias>>(b1, b2, imuBias::ConstantBias(),
@@ -801,18 +802,8 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
     return;
   }
   gtsam_camera camera = camera_map[msg->camera];
-  int image_index = -1;
-  // TODO check if the time is getting farther or closer to stop early
-  // TODO helper method
-  // TODO there is soe time delay in aruco, check to make sure we have the right image
-  for(auto it = time_map_.rbegin(); it != time_map_.rend(); it++) {
-    std::cout << "Aruco Checking time: " << it->second << " DIFF = " << std::abs(it->second - msg->time) << std::endl;
-    if(std::abs(it->second - msg->time) < pairing_threshold_) {
-      std::cout << "sucessfully found camera image timestamp " << std::endl;
-      image_index = it->first;
-      break;
-    }
-  }
+  int image_index = find_camera_index(msg->time);
+  // TODO there is some time delay in aruco, check to make sure we have the right image
   if(image_index == -1) {
     std::cout << "ERROR: invalid index: -1 for the camera on aruco callback time: "
               << msg->time << " candidates: " << time_map_.size() << std::endl;
@@ -825,7 +816,6 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
   for(const alphapilot::ArucoDetection& detection : msg->detections) {
     Point3 location = Point3(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
 
-    // TODO hacky but it's like fine
     int id_base = detection.id * 10 + 1;
 
     // use the first detection to init the location of the aruco marker in world frame
@@ -851,9 +841,14 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
       GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
       Point2 detection_coords = Point2(detection.points.at(i).x, detection.points.at(i).y);
       projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
-              detection_coords, /* TODO noise*/ default_camera_noise_, symbol_shorthand::X(image_index),
+              detection_coords, aruco_camera_noise_, symbol_shorthand::X(image_index),
               symbol_shorthand::A(id_base + i), camera.K, camera.transform);
       current_incremental_graph_->push_back(projectionFactor);
+      if(debug_) {
+        // TODO generalize
+        Point3 point = Point3(3.0, 2.2, 1);
+        print_projection(image_index, point, camera, detection_coords);
+      }
     }
   }
 
@@ -893,28 +888,17 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
     return;
   }
 
-  // TODO verify that the landmark data is in the camera FOV
   // if there is no position updates this is unconstrained
   if (camera_map.find(landmark_data->camera_name) == camera_map.end()) {
     std::cout << "ERROR using invalid camera name " << landmark_data->camera_name << " make sure to register a camera first"
               << std::endl;
   }
 
-  int image_index = -1;
-  // TODO parameter make helper method
-  // TODO check if the time is getting farther or closer to stop early
-  std::cout << std::setprecision(15) << "finding state close to " << landmark_data->time << std::endl;
-  for(auto it = time_map_.rbegin(); it != time_map_.rend(); it++) {
-    if(std::abs(it->second - landmark_data->time) < pairing_threshold_) {
-      image_index = it->first;
-      break;
-    }
-  }
+  int image_index = find_camera_index(landmark_data->time);
   if(image_index == -1) {
     std::cout << "ERROR: invalid index: -1 for the camera on detection callback" << std::endl;
     return;
   }
-  std::cout << std::setprecision(15) << "found timestamp close " << time_map_[image_index] << std::endl;
 
   for (const auto &seen_landmark : landmark_data->landmarks) {
     std::string l_id = seen_landmark.gate+"_"+seen_landmark.type;
@@ -930,38 +914,13 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
       id = landmark_to_id_map_[l_id];
     } else {
       // TODO if fails to find and index that matches, handle
-      std::cout << "\n\nERROR: invalid landmark " << seen_landmark << "\n\n" << std::endl;
+      std::cout << "\n\nERROR: invalid landmark " << seen_landmark << " must register landmark first\n\n" << std::endl;
       return;
     }
+    // TODO reimplement
     /*
     if(debug_) {
-      Pose3 position;
-      bool print = false;
-      if(history_.exists(symbol_shorthand::X(image_index))) {
-        print = true;
-        position = history_.at<Pose3>(symbol_shorthand::X(image_index));
-      }
-      if(!print && gtsam_current_state_initial_guess_->exists(symbol_shorthand::X(image_index))) {
-        print = true;
-        position = gtsam_current_state_initial_guess_->at<Pose3>(symbol_shorthand::X(image_index));
-      }
-      // TODO throws exception
-      if(print) {
-        //std::cout << "\n\nposition " << position << std::endl;
-        //std::cout << "\ncamera transform " << camera.transform << std::endl;
-        position = position.compose(camera.transform);
-        //std::cout << "\nposition after " << position << std::endl;
-        PinholeCamera<Cal3_S2> test_cam(position, *camera.K);
-        alphapilot::Landmark l = landmark_locations_[id];
-        Point3 point = Point3(l.position.x, l.position.y, l.position.z);
-        //std::cout << "point: " << point << std::endl;
-        Point2 measurement = test_cam.project(point);
-        std::cout << "Landmark: " << l << std::endl;
-        std::cout << "\nGate detection " << seen_landmark << "\n";
-        std::cout << "Detection got: " << detection_coords << "\n"
-                  << "Expected     : " << measurement<< std::endl;
-
-      }
+      alphapilot::Landmark l = landmark_locations_[id];
     }
     */
     GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
@@ -1222,6 +1181,59 @@ void FactorGraphEstimator::register_camera(const std::string name,
 
 optimization_stats FactorGraphEstimator::get_optimization_stats() {
   return optimization_stats_;
+}
+
+int FactorGraphEstimator::find_camera_index(double time) {
+  if(debug_) {
+    std::cout << std::setprecision(15) << "finding state close to " << time << std::endl;
+  }
+  // if negative dt
+  if(time_map_.empty()) {
+    std::cout << "ERROR: time map is empty cannot match camera frame" << std::endl;
+    return -1;
+  }
+  if(time_map_.rbegin()->second + pairing_threshold_ < time) {
+    std::cout << "ERROR: time " << time << " is much larger than " << time_map_.rbegin()->second + pairing_threshold_ << "no correspondence" << std::endl;
+    return -1;
+  }
+  for(auto it = time_map_.rbegin(); it != time_map_.rend(); it++) {
+    double dt = std::abs(it->second - time);
+    if(dt < pairing_threshold_) {
+      if(debug_) {
+        std::cout << std::setprecision(15) << "found timestamp close " << time_map_[it->first] << std::endl;
+      }
+      return it->first;
+    } else if(it->second < time) {
+      return -1;
+    }
+  }
+  return -1;
+}
+
+void FactorGraphEstimator::print_projection(int image_index, Point3 location, gtsam_camera camera, Point2 detection_coords) {
+  // TODO throws exception
+  Pose3 position;
+  bool print = false;
+  if(history_.exists(symbol_shorthand::X(image_index))) {
+    print = true;
+    position = history_.at<Pose3>(symbol_shorthand::X(image_index));
+  }
+  if(!print && gtsam_current_state_initial_guess_->exists(symbol_shorthand::X(image_index))) {
+    print = true;
+    position = gtsam_current_state_initial_guess_->at<Pose3>(symbol_shorthand::X(image_index));
+  }
+  if(print) {
+    //std::cout << "\n\nposition " << position << std::endl;
+    //std::cout << "\ncamera transform " << camera.transform << std::endl;
+    position = position.compose(camera.transform);
+    //std::cout << "\nposition after " << position << std::endl;
+    PinholeCamera<Cal3_S2> test_cam(position, *camera.K);
+    Point2 measurement = test_cam.project(location);
+    std::cout << "Location: " << location << "\n";
+    std::cout << "Detection got: " << detection_coords << "\n"
+              << "Expected     : " << measurement<< std::endl;
+
+  }
 }
 
 } // estimator

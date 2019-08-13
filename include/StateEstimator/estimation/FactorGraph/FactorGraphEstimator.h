@@ -157,6 +157,8 @@ class FactorGraphEstimator {
   virtual void add_priors(const drone_state &initial_state);
   virtual void add_imu_factor();
   void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
+  int find_camera_index(double time);
+  void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
@@ -254,7 +256,7 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr landmark_prior_noise_;
 
   // ========== ARUCO FACTOR =============
-  gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_noise_;
+  gtsam::noiseModel::Diagonal::shared_ptr aruco_camera_noise_;
   gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_prior_noise_;
   std::map<std::string, bool> aruco_got_detections_from_;
   // list of all indexes of aruco we have seen

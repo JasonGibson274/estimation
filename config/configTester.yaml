@@ -39,7 +39,7 @@ factorGraphEstimator:
 
   cameraConfig:
     # sets the names of the cameras to be registered
-    cameraNames: [left_left, right_right]
+    cameraNames: [left_left, right_right, right_left]
 
     left_left:
       # fx, fy, s, u0, v0
@@ -55,11 +55,18 @@ factorGraphEstimator:
       # transform x, y, z, qw, qx, qy, qz
       transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
 
+    right_left:
+      # fx, fy, s, u0, v0
+      #K: [554.51459272200827, 555.90737894298354, 0.0, 591.51794469954359, 313.39437257145255] # mono 4
+      # SIM
+      K: [5.5224483608761557e+02, 5.5224483608761557e+02, 0.0, 600, 360]
+
+      # transform x, y, z, qw, qx, qy, qz
+      transform: [0.17100, -0.03000, -0.07000, 0.9159759, -0.1205899, 0.3794092, 0.0499494]
+
   arucoFactorParams:
     useArucoFactor: true
-
-    #rad, rad, rad, m, m, m
-    arucoNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    projectionPixelNoise: 10
 
     #m, m, m
     arucoPriorNoise: [10, 10, 10]

@@ -98,7 +98,7 @@ error = 12198.9744
  */
 
 int main() {
-  FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
+  FactorGraphEstimator estimator("/home/jgibson37/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
   std::cout << "\ninit ended\n" << std::endl;
 
   std::cout << "\nstarting imu callback\n" << std::endl;
@@ -115,35 +115,7 @@ int main() {
 
   reading_imu->time = 0.1 + starting_time;
   estimator.callback_imu(reading_imu);
-  /*
 
-  reading_imu->time = 0.2 + starting_time;
-  estimator.callback_imu(reading_imu);
-
-  reading_imu->time = 0.3 + starting_time;
-  estimator.callback_imu(reading_imu);
-
-  reading_imu->time = 0.4 + starting_time;
-  estimator.callback_imu(reading_imu);
-
-  reading_imu->time = 0.5 + starting_time;
-  estimator.callback_imu(reading_imu);
-
-  reading_imu->time = 0.6 + starting_time;
-  estimator.callback_imu(reading_imu);
-
-  reading_imu->time = 0.7 + starting_time;
-  estimator.callback_imu(reading_imu);
-
-  reading_imu->time = 0.8 + starting_time;
-  estimator.callback_imu(reading_imu);
-
-  reading_imu->time = 0.9 + starting_time;
-  estimator.callback_imu(reading_imu);
-
-  reading_imu->time = 1.0 + starting_time;
-  estimator.callback_imu(reading_imu);
-  */
   std::cout << "\nending imu callback\n" << std::endl;
 
   std::cout << "\nnew position after IMU callbacks:" << estimator.latest_state(false) << std::endl;
@@ -182,7 +154,7 @@ int main() {
   aruco_reading->time = 0.1 + starting_time;
 
   ArucoDetection aruco_detection;
-  aruco_detection.id = 1;
+  aruco_detection.id = 2;
   aruco_detection.pose.position.x = 1.0;
   aruco_detection.pose.position.y = 1.0;
   aruco_detection.pose.position.z = 1.0;
@@ -227,12 +199,69 @@ int main() {
   estimator.run_optimize();
   std::cout << "optimized" << std::endl;
 
+  reading_imu->time = 0.2 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.3 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.4 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.5 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.6 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.7 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.8 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 0.9 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  reading_imu->time = 1.0 + starting_time;
+  estimator.callback_imu(reading_imu);
+
+  estimator.timing_callback(1.0 + starting_time);
+
+  std::shared_ptr<ArucoDetections> aruco_reading2 = std::make_shared<ArucoDetections>();
+  aruco_reading2->time = 0.1 + starting_time;
+  aruco_reading2->camera = "right_left";
+
+  ArucoDetection detection2;
+  detection2.id = 1;
+  detection2.pose.position.x = 3.0;
+  detection2.pose.position.y = 2.2;
+  detection2.pose.position.y = 1;
+
+  detection2.points[0].x = 698;
+  detection2.points[0].y = 417;
+
+  detection2.points[1].x = 697;
+  detection2.points[1].y = 482;
+
+  detection2.points[2].x = 637;
+  detection2.points[2].y = 481;
+
+  detection2.points[3].x = 637;
+  detection2.points[3].y = 481;
+
+  aruco_reading2->detections.push_back(detection2);
+
+  estimator.aruco_callback(aruco_reading2);
+
+  estimator.run_optimize();
+
   for(int i = 1; i < 0; i++) {
     reading_imu->time = 0.1 + starting_time + 0.1 * i;
     reading_imu->x_accel = 0.0;
     reading_imu->y_accel = 0.0;
     reading_imu->z_accel = 9.81;
-    reading_imu->roll_vel = 0.0;
+    reading_imu->roll_vel = 1.0;
     reading_imu->pitch_vel = 0.0;
     reading_imu->yaw_vel = 0.0;
     estimator.callback_imu(reading_imu);
@@ -240,7 +269,6 @@ int main() {
     estimator.timing_callback(0.1 + starting_time + 0.1 * i);
 
     camera_reading->time = 0.1 + starting_time + 0.1 * i;
-    estimator.callback_cm(camera_reading);
     estimator.run_optimize();
   }
   return 0;
