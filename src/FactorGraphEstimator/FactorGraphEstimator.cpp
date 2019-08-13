@@ -355,11 +355,13 @@ bool FactorGraphEstimator::object_close_to_gate(std::list<Landmark> gate, Landma
  * This optimizes the entire state trajectory
  */
 void FactorGraphEstimator::run_optimize() {
+  // TODO make a boolean and return false if we fail to lock
   if(!optimization_lck_.try_lock()) {
+    std::cout << "ERROR: trying to have multiple optimziations of factor graph running at the same time" << std::endl;
     return;
   }
   if (current_incremental_graph_->empty()) {
-    //std::cerr << "ERROR: cannot optimize over a empty graph" << std::endl;
+    std::cout << "ERROR: cannot optimize over a empty graph" << std::endl;
     optimization_lck_.unlock();
     return;
   }
@@ -464,6 +466,7 @@ for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
 
   // calculate the centers of aruco
   if(debug_) {
+    std::cout << "\n\nARUCO POSITIONS\n\n" << std::endl;
     for(int id_base : aruco_indexes_) {
       Vector3 aruco;
       aruco << 0, 0, 0;
@@ -799,14 +802,20 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
   }
   gtsam_camera camera = camera_map[msg->camera];
   int image_index = -1;
-  for(auto it = time_map_.rbegin(); it != time_map_.rend() && std::abs(it->second - msg->time) < pairing_threshold_; it++) {
+  // TODO check if the time is getting farther or closer to stop early
+  // TODO helper method
+  // TODO there is soe time delay in aruco, check to make sure we have the right image
+  for(auto it = time_map_.rbegin(); it != time_map_.rend(); it++) {
+    std::cout << "Aruco Checking time: " << it->second << " DIFF = " << std::abs(it->second - msg->time) << std::endl;
     if(std::abs(it->second - msg->time) < pairing_threshold_) {
+      std::cout << "sucessfully found camera image timestamp " << std::endl;
       image_index = it->first;
       break;
     }
   }
   if(image_index == -1) {
-    std::cout << "ERROR: invalid index: -1 for the camera on aruco callback" << std::endl;
+    std::cout << "ERROR: invalid index: -1 for the camera on aruco callback time: "
+              << msg->time << " candidates: " << time_map_.size() << std::endl;
     return;
   }
 
@@ -893,8 +902,9 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
 
   int image_index = -1;
   // TODO parameter make helper method
+  // TODO check if the time is getting farther or closer to stop early
   std::cout << std::setprecision(15) << "finding state close to " << landmark_data->time << std::endl;
-  for(auto it = time_map_.rbegin(); it != time_map_.rend() && std::abs(it->second - landmark_data->time) < pairing_threshold_; it++) {
+  for(auto it = time_map_.rbegin(); it != time_map_.rend(); it++) {
     if(std::abs(it->second - landmark_data->time) < pairing_threshold_) {
       image_index = it->first;
       break;

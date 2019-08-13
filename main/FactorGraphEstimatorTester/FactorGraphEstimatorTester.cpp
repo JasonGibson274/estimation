@@ -8,6 +8,95 @@ using namespace alphapilot::estimator;
 using namespace alphapilot;
 using namespace gtsam;
 
+// gtrue x: -49.997 y: -0.00010982 z: 0.94244 x_dot: -5.3067e-05 y_dot: -1.0736e-06 z_dot: 0.00047878, roll: 0.010406, pitch: -0.17072, yaw: -2.3388 at 7.754 Sim Time: 7.6799
+/*
+Factor 0: GenericProjectionFactor, z = (461, 454)
+  sensor pose in body frame: R:
+[
+          0.707107433   0.183010728  -0.683012581;
+        9.4173524e-07   0.965926267   0.258817408;
+          0.707106153  -0.183012361    0.68301347
+  ]
+[0.171, 0.03, -0.07]';  keys = { x99 a21 }
+isotropic dim=2 sigma=10
+error = 12198.9744
+
+Factor 1: GenericProjectionFactor, z = (491, 458)
+  sensor pose in body frame: R:
+[
+          0.707107433   0.183010728  -0.683012581;
+        9.4173524e-07   0.965926267   0.258817408;
+          0.707106153  -0.183012361    0.68301347
+  ]
+[0.171, 0.03, -0.07]';  keys = { x99 a22 }
+isotropic dim=2 sigma=10
+error = 12198.9744
+
+Factor 2: GenericProjectionFactor, z = (492, 485)
+  sensor pose in body frame: R:
+[
+          0.707107433   0.183010728  -0.683012581;
+        9.4173524e-07   0.965926267   0.258817408;
+          0.707106153  -0.183012361    0.68301347
+  ]
+[0.171, 0.03, -0.07]';  keys = { x99 a23 }
+isotropic dim=2 sigma=10
+error = 12198.9744
+Factor 3: GenericProjectionFactor, z = (463, 483)
+  sensor pose in body frame: R:
+[
+          0.707107433   0.183010728  -0.683012581;
+        9.4173524e-07   0.965926267   0.258817408;
+          0.707106153  -0.183012361    0.68301347
+  ]
+[0.171, 0.03, -0.07]';  keys = { x99 a24 }
+isotropic dim=2 sigma=10
+error = 12198.9744
+
+Factor 4: GenericProjectionFactor, z = (637, 411)
+  sensor pose in body frame: R:
+[
+          0.707107433   0.183010728  -0.683012581;
+        9.4173524e-07   0.965926267   0.258817408;
+          0.707106153  -0.183012361    0.68301347
+  ]
+[0.171, 0.03, -0.07]';  keys = { x99 a11 }
+isotropic dim=2 sigma=10
+error = 12198.9744
+
+Factor 5: GenericProjectionFactor, z = (698, 417)
+  sensor pose in body frame: R:
+[
+          0.707107433   0.183010728  -0.683012581;
+        9.4173524e-07   0.965926267   0.258817408;
+          0.707106153  -0.183012361    0.68301347
+  ]
+[0.171, 0.03, -0.07]';  keys = { x99 a12 }
+isotropic dim=2 sigma=10
+error = 12198.9744
+Factor 6: GenericProjectionFactor, z = (697, 482)
+  sensor pose in body frame: R:
+[
+          0.707107433   0.183010728  -0.683012581;
+        9.4173524e-07   0.965926267   0.258817408;
+          0.707106153  -0.183012361    0.68301347
+  ]
+[0.171, 0.03, -0.07]';  keys = { x99 a13 }
+isotropic dim=2 sigma=10
+error = 12198.9744
+
+Factor 7: GenericProjectionFactor, z = (637, 481)
+  sensor pose in body frame: R:
+[
+          0.707107433   0.183010728  -0.683012581;
+        9.4173524e-07   0.965926267   0.258817408;
+          0.707106153  -0.183012361    0.68301347
+  ]
+[0.171, 0.03, -0.07]';  keys = { x99 a14 }
+isotropic dim=2 sigma=10
+error = 12198.9744
+ */
+
 int main() {
   FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
   std::cout << "\ninit ended\n" << std::endl;

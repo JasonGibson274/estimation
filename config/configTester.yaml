@@ -58,9 +58,6 @@ factorGraphEstimator:
   arucoFactorParams:
     useArucoFactor: true
 
-    # what cameras we will wait for detections from before creating a state
-    enabledCameras: [left_left, right_right]
-
     #rad, rad, rad, m, m, m
     arucoNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
