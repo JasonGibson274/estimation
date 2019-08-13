@@ -9,7 +9,7 @@ using namespace alphapilot;
 using namespace gtsam;
 
 int main() {
-  FactorGraphEstimator estimator("/home/jgibson37/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
+  FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
   std::cout << "\ninit ended\n" << std::endl;
 
   std::cout << "\nstarting imu callback\n" << std::endl;
@@ -138,7 +138,7 @@ int main() {
   estimator.run_optimize();
   std::cout << "optimized" << std::endl;
 
-  for(int i = 1; i < 100; i++) {
+  for(int i = 1; i < 0; i++) {
     reading_imu->time = 0.1 + starting_time + 0.1 * i;
     reading_imu->x_accel = 0.0;
     reading_imu->y_accel = 0.0;

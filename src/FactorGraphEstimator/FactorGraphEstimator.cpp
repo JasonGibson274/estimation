@@ -168,10 +168,9 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     aruco_pose_noise_ = noiseModel::Diagonal::Sigmas(aruco_noise);
 
     std::vector<double> aruco_pose_prior_noise_arr = alphapilot::get<std::vector<double>>("arucoPriorNoise", aruco_config,
-                                                                              {0.25, 0.25, 0.25, 0.25, 0.25, 0.25});
-    Vector6 aruco_pose_prior_noise;
-    aruco_pose_prior_noise << aruco_pose_prior_noise_arr[0], aruco_pose_prior_noise_arr[1], aruco_pose_prior_noise_arr[2],
-                              aruco_pose_prior_noise_arr[3], aruco_pose_prior_noise_arr[4], aruco_pose_prior_noise_arr[5];
+                                                                              {0.25, 0.25, 0.25});
+    Vector3 aruco_pose_prior_noise;
+    aruco_pose_prior_noise << aruco_pose_prior_noise_arr[0], aruco_pose_prior_noise_arr[1], aruco_pose_prior_noise_arr[2];
     aruco_pose_prior_noise_ = noiseModel::Diagonal::Sigmas(aruco_pose_prior_noise);
   }
 
@@ -394,13 +393,13 @@ void FactorGraphEstimator::run_optimize() {
 for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
       cout << "Value (" << keyFormatter(key->key) << "): ";
       Symbol symbol = Symbol(key->key);
-      if(symbol.chr() == 'x' || symbol.chr() == 'a') {
+      if(symbol.chr() == 'x') {
         Pose3 temp = key->value.cast<Pose3>();
         std::cout << temp << "\n";
       } else if(symbol.chr() == 'v') {
         Vector3 temp = key->value.cast<Vector3>();
         std::cout << temp.transpose() << "\n";
-      } else if(symbol.chr() == 'l') {
+      } else if(symbol.chr() == 'l' || symbol.chr() == 'a') {
         Point3 temp = key->value.cast<Point3>();
         std::cout << temp.transpose() << "\n";
       } else if(symbol.chr() == 'b') {
@@ -462,6 +461,20 @@ for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
     landmark_locations_.insert(std::make_pair(i, new_landmark));
   }
   landmark_lck_.unlock();
+
+  // calculate the centers of aruco
+  if(debug_) {
+    for(int id_base : aruco_indexes_) {
+      Vector3 aruco;
+      aruco << 0, 0, 0;
+      for(int i = 0; i < 4; i++) {
+        Point3 temp = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
+        aruco += temp.vector();
+      }
+      aruco /= 4;
+      std::cout << "Aruco with id " << (id_base - 1) / 10 << ": " << aruco.transpose() << std::endl;
+    }
+  }
 
   // get timing statistics
   ++optimization_stats_.optimizationIterations;
@@ -564,6 +577,7 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   }
   dt = imu_data->time - last_imu_time_;
   last_imu_time_ = imu_data->time;
+  current_pose_estimate_.time = last_imu_time_;
   if (dt <= 0 || dt > 10) {
     std::cout << "ERROR: cannot use imu reading with dt <= 0 || dt > 10" << std::endl;
     return;
@@ -783,51 +797,55 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
               << std::endl;
     return;
   }
+  gtsam_camera camera = camera_map[msg->camera];
   int image_index = -1;
   for(auto it = time_map_.rbegin(); it != time_map_.rend() && std::abs(it->second - msg->time) < pairing_threshold_; it++) {
-    image_index = it->first;
+    if(std::abs(it->second - msg->time) < pairing_threshold_) {
+      image_index = it->first;
+      break;
+    }
   }
   if(image_index == -1) {
     std::cout << "ERROR: invalid index: -1 for the camera on aruco callback" << std::endl;
     return;
   }
 
-  // TODO Timing on this does not make sense, it should only happen on states from the camera
-  // create states on each aruco detection
-  // TODO track the time for each state index
-
-
   lock_guard<mutex> graph_lck(graph_lck_);
 
   // list of ids that have been added so there are not duplicates
   for(const alphapilot::ArucoDetection& detection : msg->detections) {
     Point3 location = Point3(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
-    gtsam::Quaternion rotation = gtsam::Quaternion(gtsam::Quaternion(detection.pose.orientation.w, detection.pose.orientation.x,
-            detection.pose.orientation.y, detection.pose.orientation.z));
-    Pose3 transform = Pose3(Rot3(rotation), location);
 
-    // TODO transform aruco into world frame
-    // aruco in camera frame -> imu frame -> world frame
+    // TODO hacky but it's like fine
+    int id_base = detection.id * 10 + 1;
 
-    // use the first detection to init the location of the aruco marker
-    if(aruco_indexes_.find(detection.id) == aruco_indexes_.end()) {
+    // use the first detection to init the location of the aruco marker in world frame
+    if(aruco_indexes_.find(id_base) == aruco_indexes_.end()) {
       if(debug_) {
-        std::cout << "creating aruco with id " << detection.id << " at index " << image_index << ": "
-                  << transform << std::endl;
+        std::cout << "creating aruco with id " << id_base << " at index " << image_index << ": "
+                  << location << std::endl;
       }
-      Pose3 prior = current_position_guess_ * transform;
-      gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(detection.id), prior);
-      current_incremental_graph_->add(PriorFactor<Pose3>(symbol_shorthand::A(detection.id),
-                                                    prior,
-                                                    aruco_pose_prior_noise_));
+      // convert drone frame to gloal frame
+      Point3 prior = current_position_guess_ * location;
+      // insert a prior and state for each aruco
+      for(unsigned int i = 0; i < detection.points.size(); i++) {
+        gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(id_base + i), prior);
+        // TODO use the orientation to create a new position for each
+        current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
+                                                            prior,
+                                                            aruco_pose_prior_noise_));
+      }
     }
-    aruco_indexes_.insert(detection.id);
+    aruco_indexes_.insert(id_base);
 
-    // assumes that the pose change is in body frame
-    current_incremental_graph_->emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(image_index),
-                                                                symbol_shorthand::A(detection.id),
-                                                                transform,
-                                                                aruco_pose_noise_);
+    for(unsigned int i = 0; i < detection.points.size(); i++) {
+      GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
+      Point2 detection_coords = Point2(detection.points.at(i).x, detection.points.at(i).y);
+      projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
+              detection_coords, /* TODO noise*/ default_camera_noise_, symbol_shorthand::X(image_index),
+              symbol_shorthand::A(id_base + i), camera.K, camera.transform);
+      current_incremental_graph_->push_back(projectionFactor);
+    }
   }
 
 }
@@ -1166,8 +1184,6 @@ drone_state FactorGraphEstimator::latest_state(bool optimize) {
   current_pose_estimate_.x_dot = current_velocity_guess_[0];
   current_pose_estimate_.y_dot = current_velocity_guess_[1];
   current_pose_estimate_.z_dot = current_velocity_guess_[2];
-  // TODO Double check this is the best timestamp
-  current_pose_estimate_.time = last_imu_time_;
   return current_pose_estimate_;
 }
 

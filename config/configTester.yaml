@@ -64,8 +64,8 @@ factorGraphEstimator:
     #rad, rad, rad, m, m, m
     arucoNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
-    #rad, rad, rad, m, m, m
-    arucoPriorNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    #m, m, m
+    arucoPriorNoise: [10, 10, 10]
 
   projectionFactorParams:
     useProjectionFactor: true
