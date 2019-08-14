@@ -23,6 +23,8 @@ Authors: Bogdan Vlahov and Jason Gibson
 
 #include <yaml-cpp/yaml.h>
 #include <unordered_set>
+#include <tuple>
+#include <queue>
 
 // TODO make callbacks pass by const reference to shared pointer
 namespace alphapilot {
@@ -144,13 +146,15 @@ class FactorGraphEstimator {
 
   virtual void run_optimize();
 
-  std::map<int, std::list<alphapilot::Landmark>> group_gates();
+  void group_gates();
   bool object_in_gate(std::list<alphapilot::Landmark> gate, std::string l_type);
   bool object_close_to_gate(std::list<alphapilot::Landmark> gate, Landmark l);
 
   virtual alphapilot::drone_state latest_state(bool optimize=false);
 
   virtual void add_projection_prior(std::shared_ptr<Landmark> msg);
+
+  virtual std::vector<alphapilot::Gate> get_gates();
 
  private:
   virtual void add_pose_factor();
@@ -159,6 +163,8 @@ class FactorGraphEstimator {
   void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
   int find_camera_index(double time);
   void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
+  void calculate_gate_centers();
+  void assign_gate_ids(std::shared_ptr<GateDetections> detection_msg);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
@@ -191,6 +197,7 @@ class FactorGraphEstimator {
   std::mutex optimization_lck_; // lock to prevent multiple optimization running concurrently
   std::mutex landmark_lck_; // lock to prevent reading and writing to landmark_locations_
   std::mutex preintegrator_lck_; // lock to control preintegrator
+  std::mutex gate_lck_; // lock to control gate_centers_
 
   // index of the current state
   int index_ = 0;
@@ -247,6 +254,7 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
   std::map<int, alphapilot::Landmark> landmark_locations_;
+  std::vector<alphapilot::Gate> gate_centers_;
   // TODO change to pair of id and type
   std::map<int, std::string> id_to_landmark_map_;
   std::map<std::string, int> landmark_to_id_map_;
@@ -254,6 +262,7 @@ class FactorGraphEstimator {
   // how close a timestamp has to be to the state time
   double pairing_threshold_ = 0.1;
   gtsam::noiseModel::Diagonal::shared_ptr landmark_prior_noise_;
+  bool reassign_gate_ids_ = true;
 
   // ========== ARUCO FACTOR =============
   gtsam::noiseModel::Diagonal::shared_ptr aruco_camera_noise_;

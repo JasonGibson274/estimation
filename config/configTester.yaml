@@ -75,6 +75,8 @@ factorGraphEstimator:
     useProjectionFactor: true
     defaultPixelNoise: 10.0
     pairingThreshold: 0.1 # allowed time stamp difference
+    # if the distance to gate centers will be use to assign ids
+    reassignGateIds: true
 
     # list of valid objects
     objects: [0, 1, 2, 3, 4, 5, 6, 7, 8]

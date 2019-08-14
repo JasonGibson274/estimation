@@ -5,6 +5,7 @@
 #include <yaml-cpp/yaml.h>
 #include <alphapilot_common/GateConstraints.h>
 #include <unordered_set>
+#include <queue>
 
 using namespace std;
 using namespace gtsam;
@@ -117,6 +118,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     use_camera_factors_ = alphapilot::get<bool>("useProjectionFactor", camera_config, false);
     double default_noise = alphapilot::get<double>("defaultPixelNoise", camera_config, 10.0);
     default_camera_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
+    reassign_gate_ids_ = alphapilot::get<bool>("reassignGateIds", camera_config, true);
 
     pairing_threshold_ = alphapilot::get<double>("pairingThreshold", camera_config, 0.1);
 
@@ -149,6 +151,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
       add_projection_prior(new_landmark);
 
     }
+    calculate_gate_centers();
 
   }
 
@@ -284,7 +287,43 @@ std::vector<alphapilot::Landmark> FactorGraphEstimator::get_landmark_positions()
   return result;
 }
 
-std::map<int, std::list<Landmark>> FactorGraphEstimator::group_gates() {
+void FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detection_msg) {
+  lock_guard<mutex> gate_lck(gate_lck_);
+
+  // detected id, actual gate id, distance
+  auto comp = [](std::tuple<std::string, std::string, double> a, std::tuple<std::string, std::string, double> b ) {
+    return std::get<2>(a) < std::get<2>(b);
+  };
+  std::priority_queue<std::tuple<std::string, std::string, double>, std::vector<std::tuple<std::string, std::string, double>>, decltype(comp)> pq(comp);
+  for(GateDetection detection : detection_msg->landmarks) {
+    // iterate through the gates to see which one is closest to the pose
+    for(Gate gate : gate_centers_) {
+      double dist = alphapilot::dist(detection.pose.position, gate.position.position);
+      pq.push(std::tie(detection.gate, gate.id, dist));
+    }
+  }
+  // iterate through and assign lowest distance matching
+  std::unordered_set<std::string> detected_ids;
+  std::unordered_set<std::string> actual_ids;
+  std::map<std::string, std::string> detected_to_actual;
+  while(!pq.empty() && detected_ids.size() < detection_msg->landmarks.size()) {
+    auto top = pq.top();
+    std::string detected = std::get<0>(top);
+    std::string actual = std::get<1>(top);
+    if(detected_ids.count(detected) == 0 && actual_ids.count(actual) == 0) {
+      detected_ids.insert(detected);
+      actual_ids.insert(actual);
+      detected_to_actual[detected] = actual;
+    }
+    pq.pop();
+  }
+  // set the ids to be what was calculated earlier
+  for(auto it = detection_msg->landmarks.begin(); it != detection_msg->landmarks.end(); it++) {
+    it->gate = detected_to_actual[it->gate];
+  }
+}
+
+void FactorGraphEstimator::group_gates() {
   auto landmarks = get_landmark_positions();
   std::map<int, std::list<Landmark>> gates = {};
   int num_gates = gates.size();
@@ -325,7 +364,6 @@ std::map<int, std::list<Landmark>> FactorGraphEstimator::group_gates() {
       gates[num_gates] = new_gate;
     }
   }
-  return gates;
 }
 
 bool FactorGraphEstimator::object_in_gate(std::list<Landmark> gate, std::string l_type) {
@@ -433,7 +471,6 @@ for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
   }
 
   // TODO should I calculate the entire solutions or just single ones
-
   // set the guesses of state to the correct output, update to account for changes since last optimization
   // TODO use covariance
   Pose3 local_position_optimized = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(temp_index));
@@ -462,8 +499,10 @@ for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
     }
      */
     landmark_locations_.insert(std::make_pair(i, new_landmark));
+    // if it is a center of a gate store it in that vector directly
   }
   landmark_lck_.unlock();
+  calculate_gate_centers();
 
   // calculate the centers of aruco
   if(debug_) {
@@ -900,43 +939,53 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
     return;
   }
 
-  for (const auto &seen_landmark : landmark_data->landmarks) {
-    std::string l_id = seen_landmark.gate+"_"+seen_landmark.type;
-    std::string object_type = seen_landmark.type;
+  // TODO add parameter to enabling or disabling this
+  // groups the gates and sets the ids correctly
+  if(reassign_gate_ids_) {
+    assign_gate_ids(landmark_data);
+  }
 
-    // New Landmark - Add a new Factor
-    gtsam_camera camera = camera_map[landmark_data->camera_name];
+  for (const auto &seen_gate : landmark_data->landmarks) {
+    for(const auto &subfeature : seen_gate.subfeatures) {
+      std::string l_id = seen_gate.gate+"_"+subfeature.type;
+      std::string object_type = subfeature.type;
 
-    Point2 detection_coords(seen_landmark.x, seen_landmark.y);
+      // New Landmark - Add a new Factor
+      gtsam_camera camera = camera_map[landmark_data->camera_name];
 
-    int id = -1;
-    if(landmark_to_id_map_.find(l_id) != landmark_to_id_map_.end()) {
-      id = landmark_to_id_map_[l_id];
-    } else {
-      // TODO if fails to find and index that matches, handle
-      std::cout << "\n\nERROR: invalid landmark " << seen_landmark << " must register landmark first\n\n" << std::endl;
-      return;
+      Point2 detection_coords(subfeature.x, subfeature.y);
+
+      int id = -1;
+      if(landmark_to_id_map_.find(l_id) != landmark_to_id_map_.end()) {
+        id = landmark_to_id_map_[l_id];
+      } else {
+        // TODO if fails to find and index that matches, handle
+        std::cout << "\n\nERROR: invalid subfeature gate: " << seen_gate.gate << subfeature
+                  << "\nmust register landmark first\n\n" << std::endl;
+        return;
+      }
+      // TODO reimplement
+      /*
+      if(debug_) {
+        alphapilot::Landmark l = landmark_locations_[id];
+      }
+      */
+      GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
+      if (object_noises_.find(object_type) != object_noises_.end()) {
+        projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
+            detection_coords, object_noises_[object_type], symbol_shorthand::X(image_index),
+            symbol_shorthand::L(id), camera.K, camera.transform);
+      } else {
+        projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
+            detection_coords, default_camera_noise_, symbol_shorthand::X(image_index),
+            symbol_shorthand::L(id), camera.K, camera.transform);
+      }
+
+      graph_lck_.lock();
+      current_incremental_graph_->push_back(projectionFactor);
+      graph_lck_.unlock();
     }
-    // TODO reimplement
-    /*
-    if(debug_) {
-      alphapilot::Landmark l = landmark_locations_[id];
-    }
-    */
-    GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
-    if (object_noises_.find(object_type) != object_noises_.end()) {
-      projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
-          detection_coords, object_noises_[object_type], symbol_shorthand::X(image_index),
-          symbol_shorthand::L(id), camera.K, camera.transform);
-    } else {
-      projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
-          detection_coords, default_camera_noise_, symbol_shorthand::X(image_index),
-          symbol_shorthand::L(id), camera.K, camera.transform);
-    }
 
-    graph_lck_.lock();
-    current_incremental_graph_->push_back(projectionFactor);
-    graph_lck_.unlock();
   }
 }
 
@@ -1203,7 +1252,7 @@ int FactorGraphEstimator::find_camera_index(double time) {
         std::cout << std::setprecision(15) << "found timestamp close " << time_map_[it->first] << std::endl;
       }
       return it->first;
-    } else if(it->second < time) {
+    } else if(it->second + pairing_threshold_ < time) {
       return -1;
     }
   }
@@ -1233,6 +1282,41 @@ void FactorGraphEstimator::print_projection(int image_index, Point3 location, gt
     std::cout << "Detection got: " << detection_coords << "\n"
               << "Expected     : " << measurement<< std::endl;
 
+  }
+}
+
+std::vector<alphapilot::Gate> FactorGraphEstimator::get_gates() {
+  lock_guard<mutex> gate_lck(gate_lck_);
+  return gate_centers_;
+}
+
+// also under landmark_lck
+void FactorGraphEstimator::calculate_gate_centers() {
+  lock_guard<mutex> gate_lck(gate_lck_);
+  lock_guard<mutex> landmark_lck(landmark_lck_);
+  // add all the positions together
+  std::map<std::string, Vector4> map;
+  for(auto & landmark_location : landmark_locations_) {
+    std::string gate_id = landmark_location.second.id;
+    if(map.count(gate_id) == 0) {
+      Vector4 temp;
+      temp << 0, 0, 0, 0;
+      map[gate_id] = temp;
+    }
+    Vector4 temp;
+    temp << landmark_location.second.position.x, landmark_location.second.position.y, landmark_location.second.position.z, 1;
+    map[gate_id] += temp;
+  }
+  for(auto & it : map) {
+    Gate gate;
+    gate.id = it.first;
+    // find the average position
+    it.second /= it.second(3);
+    // set the postion of each gate
+    gate.position.position.x = it.second(0);
+    gate.position.position.y = it.second(1);
+    gate.position.position.z = it.second(2);
+    gate_centers_.push_back(gate);
   }
 }
 

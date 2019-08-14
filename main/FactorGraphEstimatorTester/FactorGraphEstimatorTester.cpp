@@ -179,17 +179,31 @@ int main() {
   camera_reading->camera_name = "left_left";
 
   GateDetection gate_detection1;
-  gate_detection1.gate = "10";
-  gate_detection1.type = "1";
-  gate_detection1.x = 402.28125;
-  gate_detection1.y = 195.784973145;
+  gate_detection1.gate = "dgjsklds";
+  Subfeature subfeature1;
+  subfeature1.type = "1";
+  subfeature1.x = 402.28125;
+  subfeature1.y = 195.784973145;
+  gate_detection1.subfeatures.push_back(subfeature1);
+
+  gate_detection1.pose.position.x = 18;
+  gate_detection1.pose.position.y = 15;
+  gate_detection1.pose.position.z = 9;
+
   camera_reading->landmarks.push_back(gate_detection1);
 
   GateDetection gate_detection2;
-  gate_detection2.gate = "12";
-  gate_detection2.type = "3";
-  gate_detection2.x = 55.6590881348;
-  gate_detection2.y = 147.801269531;
+  gate_detection2.gate = "gjksalh;";
+  Subfeature subfeature2;
+  subfeature2.type = "3";
+  subfeature2.x = 55.6590881348;
+  subfeature2.y = 147.801269531;
+  gate_detection2.subfeatures.push_back(subfeature2);
+
+  gate_detection2.pose.position.x = 18;
+  gate_detection2.pose.position.y = 3;
+  gate_detection2.pose.position.z = 7;
+
   camera_reading->landmarks.push_back(gate_detection2);
 
   estimator.callback_cm(camera_reading);
