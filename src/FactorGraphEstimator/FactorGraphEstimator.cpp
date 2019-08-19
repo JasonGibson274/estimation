@@ -510,11 +510,17 @@ for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
     for(int id_base : aruco_indexes_) {
       Vector3 aruco;
       aruco << 0, 0, 0;
+      int num_points = 0;
       for(int i = 0; i < 4; i++) {
-        Point3 temp = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
-        aruco += temp.vector();
+        if (isam_.valueExists(symbol_shorthand::A(id_base + i))) {
+          Point3 temp = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
+          aruco += temp.vector();
+          num_points++;
+        } else {
+          std::cout << "Aruco " << id_base << i << " does not exist in isam" << std::endl;
+        }
       }
-      aruco /= 4;
+      aruco /= num_points;
       std::cout << "Aruco with id " << (id_base - 1) / 10 << ": " << aruco.transpose() << std::endl;
     }
   }
@@ -883,11 +889,11 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
               detection_coords, aruco_camera_noise_, symbol_shorthand::X(image_index),
               symbol_shorthand::A(id_base + i), camera.K, camera.transform);
       current_incremental_graph_->push_back(projectionFactor);
-      if(debug_) {
-        // TODO generalize
-        Point3 point = Point3(3.0, 2.2, 1);
-        print_projection(image_index, point, camera, detection_coords);
-      }
+      // if(debug_) {
+      //   // TODO generalize
+      //   Point3 point = Point3(3.0, 2.2, 1);
+      //   print_projection(image_index, point, camera, detection_coords);
+      // }
     }
   }
 
