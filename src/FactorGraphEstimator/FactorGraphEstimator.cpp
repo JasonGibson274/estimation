@@ -400,7 +400,7 @@ void FactorGraphEstimator::run_optimize() {
     return;
   }
   if (current_incremental_graph_->empty()) {
-    std::cout << "ERROR: cannot optimize over a empty graph" << std::endl;
+    std::cout << "Warning: cannot optimize over a empty graph" << std::endl;
     optimization_lck_.unlock();
     return;
   }
@@ -431,7 +431,7 @@ void FactorGraphEstimator::run_optimize() {
     std::cout << "\nguess state guesses";
     KeyFormatter keyFormatter = gtsam::DefaultKeyFormatter;
     std::cout << "\nValues with " << guesses_copy->size() << " values:" << std::endl;
-for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
+    for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
       cout << "Value (" << keyFormatter(key->key) << "): ";
       Symbol symbol = Symbol(key->key);
       if(symbol.chr() == 'x') {
@@ -748,7 +748,9 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
   // the ordering is correct for gtsam
   current_position_guess_ = Pose3(Rot3::Ypr(y_result, p_result, r_result),
                                   Point3(result.x, result.y, result.z));
-  std::cout << current_position_guess_.rotation().rpy()[0] << std::endl;
+  // if (debug_) {
+  //   std::cout << current_position_guess_.rotation().rpy()[0] << std::endl;
+  // }
   current_velocity_guess_ = Vector3(result.x_dot, result.y_dot, result.z_dot);
 
   // prop state forward
