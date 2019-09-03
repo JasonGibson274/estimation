@@ -554,6 +554,9 @@ void FactorGraphEstimator::run_optimize() {
               << "Bias guess: " << current_bias_guess_ << std::endl;
   }
    */
+  if (debug_) {
+    std::cout << "Bias Guess: " << current_bias_guess_ << std::endl;
+  }
 
   // calculate the how much the state has changed since we started the optimization
   gtsam::Quaternion odom_q = gtsam::Quaternion(current_state.qw, current_state.qx,
@@ -862,7 +865,9 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
   // list of ids that have been added so there are not duplicates
   for(const alphapilot::ArucoDetection& detection : msg->detections) {
     Point3 location = Point3(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
-
+    double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
+    gtsam::PinholeCamera<Cal3_S2> gt_cam(camera.transform, *camera.K);
+    auto projection_thing = gt_cam.backproject(Point2(detection.points[0].x, detection.points[0].y), dist_aruco);
     int id_base = detection.id * 10 + 1;
 
     // use the first detection to init the location of the aruco marker in world frame
@@ -872,7 +877,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
                   << location << std::endl;
       }
       // convert drone frame to gloal frame
-      Point3 prior = current_position_guess_ * location;
+      Point3 prior = current_position_guess_ * projection_thing;
       // insert a prior and state for each aruco
       for(unsigned int i = 0; i < detection.points.size(); i++) {
         gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(id_base + i), prior);
