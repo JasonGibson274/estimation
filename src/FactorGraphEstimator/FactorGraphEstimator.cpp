@@ -395,7 +395,8 @@ bool FactorGraphEstimator::object_close_to_gate(std::list<Landmark> gate, Landma
  */
 void FactorGraphEstimator::run_optimize() {
   // TODO make a boolean and return false if we fail to lock
-  if(!optimization_lck_.try_lock()) {
+  std::unique_lock<std::mutex> opt_lck_guard(optimization_lck_, std::try_to_lock);
+  if(!opt_lck_guard.owns_lock()) {
     std::cout << "ERROR: trying to have multiple optimziations of factor graph running at the same time" << std::endl;
     return;
   }
@@ -406,8 +407,8 @@ void FactorGraphEstimator::run_optimize() {
   }
 
   // run the optimization and output the final state
-  graph_lck_.lock();
-  latest_state_lck_.lock();
+  std::unique_lock<std::mutex> graph_lck_guard(graph_lck_);
+  std::unique_lock<std::mutex> latest_state_lck_guard(graph_lck_);
   if(debug_) {
     std::cout << "\nstarting optimization at index = " << index_ << std::endl;
   }
@@ -415,7 +416,7 @@ void FactorGraphEstimator::run_optimize() {
   int temp_bias_index = bias_index_;
   drone_state previous_state = current_pose_estimate_;
   Pose3 previous_guess_pose = current_position_guess_;
-  latest_state_lck_.unlock();
+  latest_state_lck_guard.unlock();
 
   std::shared_ptr<gtsam::NonlinearFactorGraph> graph_copy = current_incremental_graph_;
   std::shared_ptr<gtsam::Values> guesses_copy = gtsam_current_state_initial_guess_;
@@ -424,7 +425,7 @@ void FactorGraphEstimator::run_optimize() {
   current_incremental_graph_ = std::make_shared<gtsam::NonlinearFactorGraph>();
   gtsam_current_state_initial_guess_ = std::make_shared<gtsam::Values>();
 
-  graph_lck_.unlock();
+  graph_lck_guard.unlock();
 
   if (debug_) {
     history_.insert(*guesses_copy);
@@ -481,7 +482,7 @@ void FactorGraphEstimator::run_optimize() {
     current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(temp_bias_index));
   }
 
-  landmark_lck_.lock();
+  std::unique_lock<std::mutex> landmark_lck_guard(landmark_lck_);
   // calculate the locations of the landmarks
   landmark_locations_.clear();
   for(int i = 0; i < gate_landmark_index_; i++) {
@@ -501,7 +502,7 @@ void FactorGraphEstimator::run_optimize() {
     landmark_locations_.insert(std::make_pair(i, new_landmark));
     // if it is a center of a gate store it in that vector directly
   }
-  landmark_lck_.unlock();
+  landmark_lck_guard.unlock();
   calculate_gate_centers();
 
   // calculate the centers of aruco
@@ -539,8 +540,8 @@ void FactorGraphEstimator::run_optimize() {
     std::cout << optimization_stats_ << std::endl;
   }
 
-  graph_lck_.lock();
-  latest_state_lck_.lock();
+  graph_lck_guard.lock();
+  latest_state_lck_guard.lock();
 
   // get the current state
   drone_state current_state = current_pose_estimate_;
@@ -592,7 +593,7 @@ void FactorGraphEstimator::run_optimize() {
     std::cout << "\ncurrent velocity guess = " << current_velocity_guess_.transpose() << "\n\n\n" << std::endl;
   }
 
-  graph_lck_.unlock();
+  graph_lck_guard.unlock();
 
   // set the result to best guess
   current_pose_estimate_.x = current_position_guess_.x();
@@ -607,9 +608,6 @@ void FactorGraphEstimator::run_optimize() {
   current_pose_estimate_.x_dot = current_velocity_guess_[0];
   current_pose_estimate_.y_dot = current_velocity_guess_[1];
   current_pose_estimate_.z_dot = current_velocity_guess_[2];
-  latest_state_lck_.unlock();
-
-  optimization_lck_.unlock();
 }
 
 /**
