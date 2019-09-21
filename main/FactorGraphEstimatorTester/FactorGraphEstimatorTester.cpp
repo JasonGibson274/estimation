@@ -98,9 +98,26 @@ error = 12198.9744
  */
 
 int main() {
-  std::vector<double> R = {0.48380819, 0.22325713,  0.84621858, -0.87511682, 0.13446987, 0.46485309, -0.01000913, -0.96543985, 0.26043369};
+  //std::vector<double> R = {0.48380819, 0.22325713,  0.84621858, -0.87511682, 0.13446987, 0.46485309, -0.01000913, -0.96543985, 0.26043369};
+  std::vector<double> R = {0, 0, 1, -1, 0, 0, 0, -1, 0};
 
-  std::cout << "quaternion " << alphapilot::convertRotMatrixToQuat(R) << std::endl;
+  auto quat = alphapilot::convertRotMatrixToQuat(R);
+  std::cout << "quaternion " << quat << std::endl;
+
+  auto euler = alphapilot::convertQuatToEulerAngles(quat);
+
+  std::cout << "euler " << euler << std::endl;
+
+  auto quat_2 = alphapilot::convertEulertoQuat(euler);
+
+  std::cout << "quat 2 " << quat_2 << std::endl;
+
+  auto rot_mat = alphapilot::get_Rotational_Matrix(quat_2);
+
+  for(int i = 0; i < rot_mat.size(); i++) {
+    std::cout << rot_mat[i] << " " ;
+  }
+  std::cout << std::endl;
 
 
   FactorGraphEstimator estimator("/home/jgibson37/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");

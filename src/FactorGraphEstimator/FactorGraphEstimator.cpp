@@ -84,17 +84,15 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     // load cameras
     std::vector<std::string> camera_names = alphapilot::get<std::vector<std::string>>("cameraNames", camera_config, {});
     for (auto &camera_name : camera_names) {
-      std::shared_ptr<alphapilot::transform> trans = std::make_shared<alphapilot::transform>();
-      std::vector<double> transform = alphapilot::get<std::vector<double>>("transform", camera_config[camera_name],
-                                                                           {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0});
-      trans->x = transform[0];
-      trans->y = transform[1];
-      trans->z = transform[2];
+      std::vector<double> translation_vec = alphapilot::get<std::vector<double>>("translation", camera_config[camera_name],
+                                                                           {0.0, 0.0, 0.0});
 
-      trans->qw = transform[3];
-      trans->qx = transform[4];
-      trans->qy = transform[5];
-      trans->qz = transform[6];
+      std::shared_ptr<gtsam::Point3> translation = std::make_shared<gtsam::Point3>(translation_vec[0], translation_vec[1], translation_vec[2]);
+
+      std::vector<double> rotation_vec = alphapilot::get<std::vector<double>>("rotation", camera_config[camera_name],
+                                                                              {1,0,0,0,1,0,0,0,1});
+      std::shared_ptr<Rot3> rotation = std::make_shared<Rot3>(rotation_vec[0], rotation_vec[1], rotation_vec[2],
+      rotation_vec[3], rotation_vec[4], rotation_vec[5], rotation_vec[6], rotation_vec[7], rotation_vec[8]);
 
       std::shared_ptr<alphapilot::camera_info> cam_info = std::make_shared<alphapilot::camera_info>();
 
@@ -107,7 +105,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
       cam_info->u0 = K[3];
       cam_info->v0 = K[4];
 
-      register_camera(camera_name, trans, cam_info);
+      register_camera(camera_name, translation, rotation, cam_info);
 
     }
   }
@@ -521,6 +519,9 @@ void FactorGraphEstimator::run_optimize() {
     for(int i = 0; i < 4; i++) {
       if (isam_.valueExists(symbol_shorthand::A(id_base + i))) {
         Point3 temp = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
+        std::cout << "\033[1;31mAruco " << id_base + i << ": ";
+        //print_projection(temp_index, temp, camera_map["left_right"], Point2());
+        std::cout << "\033[0m" << std::endl;
         alphapilot::Point pos;
         pos.x = temp.x();
         pos.y = temp.y();
@@ -654,6 +655,13 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   double invert_x = invert_x_ ? -1.0 : 1.0;
   double invert_y = invert_y_ ? -1.0 : 1.0;
   double invert_z = invert_z_ ? -1.0 : 1.0;
+
+  imu_data->x_accel = 0;
+  imu_data->y_accel = 0;
+  imu_data->z_accel = 9.81;
+  imu_data->roll_vel = 0.0;
+  imu_data->pitch_vel = 0.0;
+  imu_data->yaw_vel = 0.0;
 
   // updates the current guesses of position
   Vector3 accel = Vector3(imu_data->x_accel * invert_x, imu_data->y_accel * invert_y, imu_data->z_accel * invert_z);
@@ -899,12 +907,49 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
       // convert drone frame to gloal frame
       // insert a prior and state for each aruco
       for(unsigned int i = 0; i < detection.points.size(); i++) {
-        gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(id_base + i), prior);
+        Point3 tmp = prior;
+        if (i == 0) {
+          tmp += Point3(-0.1, -0.1, 0);
+        } else if (i == 1) {
+          tmp += Point3(-0.1, 0.1, 0);
+        } else if (i == 2) {
+          tmp += Point3(0.1, 0.1, 0);
+        } else if (i == 3) {
+          tmp += Point3(0.1, -0.1, 0);
+        }
+        // prior += Point3(0, 0, 0.2);
+        gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(id_base + i), tmp);
         // TODO use the orientation to create a new position for each
         current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
-                                                            prior,
+                                                            tmp,
                                                             aruco_pose_prior_noise_));
       }
+      // create between factors for each corresponding set of points
+      // tl to tr
+      gtsam::noiseModel::Diagonal::shared_ptr aruco_constraint_noise = noiseModel::Isotropic::Sigma(1, 0.05);
+      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base),
+                                                symbol_shorthand::A(id_base + 1),
+                                                0.2,
+                                                aruco_constraint_noise);
+
+      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base + 1),
+                                                                      symbol_shorthand::A(id_base + 2),
+                                                                      0.2,
+                                                                      aruco_constraint_noise);
+
+      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base + 2),
+                                                                      symbol_shorthand::A(id_base + 3),
+                                                                      0.2,
+                                                                      aruco_constraint_noise);
+
+      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base),
+                                                                      symbol_shorthand::A(id_base + 2),
+                                                                      0.28,
+                                                                      aruco_constraint_noise);
+      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base + 1),
+                                                                      symbol_shorthand::A(id_base + 3),
+                                                                      0.28,
+                                                                      aruco_constraint_noise);
       aruco_indexes_.insert(id_base);
     }
 
@@ -1238,7 +1283,8 @@ drone_state FactorGraphEstimator::latest_state(bool optimize) {
 }
 
 void FactorGraphEstimator::register_camera(const std::string name,
-                                           const std::shared_ptr<transform> transform,
+                                           const std::shared_ptr<gtsam::Point3> translation,
+                                           const std::shared_ptr<gtsam::Rot3> rotation,
                                            const std::shared_ptr<camera_info> camera_info) {
   if (name.empty()) {
     std::cout << "ERROR: invalid name of camera cannot be empty" << std::endl;
@@ -1251,8 +1297,8 @@ void FactorGraphEstimator::register_camera(const std::string name,
                                              camera_info->s,
                                              camera_info->u0,
                                              camera_info->v0);
-  cam.transform = Pose3(Rot3::Quaternion(transform->qw, transform->qx, transform->qy, transform->qz),
-                        Point3(transform->x, transform->y, transform->z));
+  cam.transform = Pose3(*rotation, *translation);
+
 
   std::cout << "Registered camera:" << "\n";
   cam.K->print();
@@ -1307,7 +1353,7 @@ void FactorGraphEstimator::print_projection(int image_index, Point3 location, gt
     //std::cout << "\n\nposition " << position << std::endl;
     //std::cout << "\ncamera transform " << camera.transform << std::endl;
     position = position.compose(camera.transform);
-    //std::cout << "\nposition after " << position << std::endl;
+    std::cout << "\nCamera World Position: " << position << std::endl;
     PinholeCamera<Cal3_S2> test_cam(position, *camera.K);
     Point2 measurement = test_cam.project(location);
     std::cout << "Location: " << location << "\n";

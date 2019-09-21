@@ -12,6 +12,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/slam/ProjectionFactor.h>
 #include <gtsam/slam/PriorFactor.h>
+#include <gtsam/sam/RangeFactor.h>
 
 #include <alphapilot_common/Utils.h>
 
@@ -20,6 +21,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <memory>
 #include <iostream>
 #include <cstdio>
+#include <gtsam/sam/RangeFactor.h>
 
 #include <yaml-cpp/yaml.h>
 #include <unordered_set>
@@ -135,9 +137,6 @@ class FactorGraphEstimator {
   virtual void callback_range(const int rangestuff);
   virtual void callback_odometry(const std::shared_ptr<drone_state> odom_data);
   virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);
-  virtual void register_camera(const std::string name,
-                               const std::shared_ptr<transform> transform,
-                               const std::shared_ptr<camera_info> camera_info);
   virtual void aruco_callback(const std::shared_ptr<alphapilot::ArucoDetections> msg);
   virtual void timing_callback(const double timestamp);
   virtual optimization_stats get_optimization_stats();
@@ -159,6 +158,10 @@ class FactorGraphEstimator {
   std::vector<alphapilot::Point> get_aruco_locations();
 
  private:
+  virtual void register_camera(const std::string name,
+                               const std::shared_ptr<gtsam::Point3> translation,
+                               const std::shared_ptr<gtsam::Rot3> rotation,
+                               const std::shared_ptr<camera_info> camera_info);
   virtual void add_pose_factor();
   virtual void add_priors(const drone_state &initial_state);
   virtual void add_imu_factor();
