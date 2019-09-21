@@ -98,6 +98,12 @@ error = 12198.9744
  */
 
 int main() {
+  std::vector<double> R = {0.48380819, -0.87511682, -0.01000913, 0.22325713,  0.13446987, -0.96543985,
+                           0.84621858,  0.46485309,  0.26043369};
+
+  std::cout << "quaternion " << alphapilot::convertRotMatrixToQuat(R) << std::endl;
+
+
   FactorGraphEstimator estimator("/home/jgibson37/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
   std::cout << "\ninit ended\n" << std::endl;
 

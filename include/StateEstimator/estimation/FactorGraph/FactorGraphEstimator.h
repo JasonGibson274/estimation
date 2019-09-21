@@ -217,7 +217,6 @@ class FactorGraphEstimator {
   // ========== IMU ===========================
   gtsam::PreintegratedImuMeasurements preintegrator_imu_;
   // the number of IMU messages currently integrated
-  int imu_meas_count_ = 0;
   double last_imu_time_ = -1;
   int bias_index_ = 0;
   int imu_bias_incr_ = 1;

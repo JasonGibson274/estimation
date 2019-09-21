@@ -266,14 +266,16 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
 }
 
 void FactorGraphEstimator::timing_callback(const double timestamp) {
+  preintegrator_lck_.lock();
   if(position_update_) {
+    preintegrator_lck_.unlock();
     add_imu_factor();
     add_pose_factor();
     lock_guard<mutex> graph_lck(graph_lck_);
     index_++;
-    position_update_ = false;
     time_map_.insert(std::make_pair(index_, timestamp));
   } else {
+    preintegrator_lck_.unlock();
     std::cout << "ERROR: no position update before timing callback, not creating a state" << std::endl;
   }
 }
@@ -401,21 +403,21 @@ void FactorGraphEstimator::run_optimize() {
     return;
   }
   if (current_incremental_graph_->empty()) {
-    std::cout << "Warning: cannot optimize over a empty graph" << std::endl;
+    //std::cout << "Warning: cannot optimize over a empty graph" << std::endl;
     optimization_lck_.unlock();
     return;
   }
 
   // run the optimization and output the final state
   std::unique_lock<std::mutex> graph_lck_guard(graph_lck_);
-  std::unique_lock<std::mutex> latest_state_lck_guard(graph_lck_);
-  if(debug_) {
-    std::cout << "\nstarting optimization at index = " << index_ << std::endl;
-  }
+  std::unique_lock<std::mutex> latest_state_lck_guard(latest_state_lck_);
   int temp_index = index_;
   int temp_bias_index = bias_index_;
   drone_state previous_state = current_pose_estimate_;
   Pose3 previous_guess_pose = current_position_guess_;
+  if(debug_) {
+    std::cout << "\nstarting optimization at index = " << temp_index << std::endl;
+  }
   latest_state_lck_guard.unlock();
 
   std::shared_ptr<gtsam::NonlinearFactorGraph> graph_copy = current_incremental_graph_;
@@ -507,7 +509,7 @@ void FactorGraphEstimator::run_optimize() {
 
   // calculate the centers of aruco
   if(debug_) {
-    std::cout << "\n\nARUCO POSITIONS\n\n" << std::endl;
+    std::cout << "\nARUCO POSITIONS\n" << std::endl;
     for(int id_base : aruco_indexes_) {
       Vector3 aruco;
       aruco << 0, 0, 0;
@@ -637,7 +639,6 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
     std::cout << "ignoring IMU since it it too large or all zero" << std::endl;
     return;
   }
-  position_update_ = true;
   // -1 if invert, 1 if !invert
   double invert_x = invert_x_ ? -1.0 : 1.0;
   double invert_y = invert_y_ ? -1.0 : 1.0;
@@ -649,7 +650,6 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
           ang_rate = Vector3(imu_data->roll_vel * invert_x, imu_data->pitch_vel * invert_y, imu_data->yaw_vel * invert_z);
   lock_guard<mutex> preintegration_lck(preintegrator_lck_);
   preintegrator_imu_.integrateMeasurement(accel, ang_rate, dt);
-  imu_meas_count_++;
 
   if(use_imu_bias_) {
     accel -= current_bias_guess_.accelerometer();
@@ -661,6 +661,7 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   // integrate the IMU to get an updated estimate of the current position
   if(use_imu_prop_) {
     propagate_imu(accel, ang_rate, dt);
+    position_update_ = true;
   }
   //std::cout << __LINE__ << std::endl;
 }
@@ -790,7 +791,8 @@ void FactorGraphEstimator::propagate_imu(Vector3 acc, Vector3 angular_vel, doubl
  * to give the optimizer a value to start from
  */
 void FactorGraphEstimator::add_imu_factor() {
-  if (imu_meas_count_ <= 0) {
+  if (!position_update_) {
+    std::cout << "Position has not been update, not adding IMU factor" << std::endl;
     return;
   }
 
@@ -809,12 +811,21 @@ void FactorGraphEstimator::add_imu_factor() {
     gtsam_current_state_initial_guess_->insert(symbol_shorthand::B(bias_index_),
                                                current_bias_guess_);
   }
-
-  preintegrator_lck_.lock();
+  lock_guard<mutex> preintegrator_lck(preintegrator_lck_);
   // motion model of position and velocity variables
   if(debug_) {
     std::cout << "creating IMU index at = " << index_ << " to " << index_ + 1 << std::endl;
   }
+
+  if(use_imu_prop_) {
+    lock_guard<mutex> latest_state_lck(latest_state_lck_);
+    // Add factor to graph and add initial variable guesses
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_ + 1),
+                                               current_position_guess_);
+    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_ + 1),
+                                               current_velocity_guess_);
+  }
+
   ImuFactor imufac(symbol_shorthand::X(index_),
                    symbol_shorthand::V(index_),
                    symbol_shorthand::X(index_ + 1),
@@ -822,20 +833,12 @@ void FactorGraphEstimator::add_imu_factor() {
                    symbol_shorthand::B(bias_index_),
                    preintegrator_imu_);
 
+  // prevents current_vel and pos from being updated
+  current_incremental_graph_->add(imufac);
+
   // clear IMU rolling integration
   preintegrator_imu_.resetIntegration();
-  imu_meas_count_ = 0;
-  preintegrator_lck_.unlock();
-
-  if(use_imu_prop_) {
-    // Add factor to graph and add initial variable guesses
-    gtsam_current_state_initial_guess_->insert(symbol_shorthand::X(index_ + 1),
-                                               current_position_guess_);
-    gtsam_current_state_initial_guess_->insert(symbol_shorthand::V(index_ + 1),
-                                               current_velocity_guess_);
-    // prevents current_vel and pos from being updated
-    current_incremental_graph_->add(imufac);
-  }
+  position_update_ = false;
 }
 
 // Assumes that there is only a single instance of an ID per camera
@@ -860,22 +863,29 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
 
   lock_guard<mutex> graph_lck(graph_lck_);
 
+  std::cout << "iterating through detecitons" << std::endl;
+
   // list of ids that have been added so there are not duplicates
   for(const alphapilot::ArucoDetection& detection : msg->detections) {
-    Point3 location = Point3(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
-    double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
-    gtsam::PinholeCamera<Cal3_S2> gt_cam(camera.transform, *camera.K);
-    auto projection_thing = gt_cam.backproject(Point2(detection.points[0].x, detection.points[0].y), dist_aruco);
     int id_base = detection.id * 10 + 1;
+
 
     // use the first detection to init the location of the aruco marker in world frame
     if(aruco_indexes_.find(id_base) == aruco_indexes_.end()) {
+      Point3 location = Point3(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
+      // use the relative distance to get estimate of aruco position
+      //double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
+      //gtsam::PinholeCamera<Cal3_S2> gt_cam(camera.transform, *camera.K);
+      //auto projection_thing = gt_cam.backproject(Point2(detection.points[0].x, detection.points[0].y), dist_aruco);
+      //Point3 prior = current_position_guess_ * projection_thing;
+
+      // convert drone frame to global frame
+      Point3 prior = current_position_guess_ * location;
       if(debug_) {
-        std::cout << "creating aruco with id " << id_base << " at index " << image_index << ": "
+        std::cout << "creating aruco with id " << id_base << " at image index " << image_index << ": "
                   << location << std::endl;
       }
       // convert drone frame to gloal frame
-      Point3 prior = current_position_guess_ * projection_thing;
       // insert a prior and state for each aruco
       for(unsigned int i = 0; i < detection.points.size(); i++) {
         gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(id_base + i), prior);
@@ -884,8 +894,8 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
                                                             prior,
                                                             aruco_pose_prior_noise_));
       }
+      aruco_indexes_.insert(id_base);
     }
-    aruco_indexes_.insert(id_base);
 
     for(unsigned int i = 0; i < detection.points.size(); i++) {
       GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
@@ -1192,7 +1202,7 @@ void FactorGraphEstimator::add_priors(const drone_state &initial_state) {
 
   last_pose_state_ = current_pose_estimate_;
 
-  run_optimize();
+  //run_optimize();
 }
 
 drone_state FactorGraphEstimator::latest_state(bool optimize) {
