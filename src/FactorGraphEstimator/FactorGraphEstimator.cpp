@@ -480,7 +480,7 @@ void FactorGraphEstimator::run_optimize() {
   Matrix pose_cov = isam_.marginalCovariance(symbol_shorthand::X(temp_index));
   Vector3 local_velocity_optimized = isam_.calculateEstimate<Vector3>(symbol_shorthand::V(temp_index));
   Matrix vel_cov = isam_.marginalCovariance(symbol_shorthand::V(temp_index));
-  if (use_imu_factors_) {
+  if (use_imu_bias_ && use_imu_factors_) {
     current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(temp_bias_index));
   }
 
@@ -510,23 +510,34 @@ void FactorGraphEstimator::run_optimize() {
   // calculate the centers of aruco
   if(debug_) {
     std::cout << "\nARUCO POSITIONS\n" << std::endl;
-    for(int id_base : aruco_indexes_) {
-      Vector3 aruco;
-      aruco << 0, 0, 0;
-      int num_points = 0;
-      for(int i = 0; i < 4; i++) {
-        if (isam_.valueExists(symbol_shorthand::A(id_base + i))) {
-          Point3 temp = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
-          aruco += temp.vector();
-          num_points++;
-        } else {
-          std::cout << "Aruco " << id_base << i << " does not exist in isam" << std::endl;
-        }
+  }
+  aruco_locations_lck_.lock();
+  aruco_locations_.clear();
+  aruco_locations_.reserve(aruco_indexes_.size() * 4);
+  for(int id_base : aruco_indexes_) {
+    Vector3 aruco;
+    aruco << 0, 0, 0;
+    int num_points = 0;
+    for(int i = 0; i < 4; i++) {
+      if (isam_.valueExists(symbol_shorthand::A(id_base + i))) {
+        Point3 temp = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
+        alphapilot::Point pos;
+        pos.x = temp.x();
+        pos.y = temp.y();
+        pos.z = temp.z();
+        aruco_locations_.push_back(pos);
+        aruco += temp.vector();
+        num_points++;
+      } else {
+        std::cout << "Aruco " << id_base << i << " does not exist in isam" << std::endl;
       }
-      aruco /= num_points;
+    }
+    aruco /= num_points;
+    if(debug_) {
       std::cout << "Aruco with id " << (id_base - 1) / 10 << ": " << aruco.transpose() << std::endl;
     }
   }
+  aruco_locations_lck_.unlock();
 
   // get timing statistics
   ++optimization_stats_.optimizationIterations;
@@ -798,7 +809,7 @@ void FactorGraphEstimator::add_imu_factor() {
 
   // Update bias at a slower rate
   lock_guard<mutex> lck(graph_lck_);
-  if (index_ % imu_bias_incr_ == 0) {
+  if (use_imu_bias_ && index_ % imu_bias_incr_ == 0) {
     bias_index_++;
     Symbol b1 = symbol_shorthand::B(bias_index_ - 1);
     Symbol b2 = symbol_shorthand::B(bias_index_);
@@ -806,8 +817,8 @@ void FactorGraphEstimator::add_imu_factor() {
     // Motion model of bias - currently constant bias is assumed
     // Add factor to graph and add initial variable guesses
     current_incremental_graph_->emplace_shared<BetweenFactor<
-            imuBias::ConstantBias>>(b1, b2, imuBias::ConstantBias(),
-                                    bias_noise_);
+        imuBias::ConstantBias>>(b1, b2, imuBias::ConstantBias(),
+                                bias_noise_);
     gtsam_current_state_initial_guess_->insert(symbol_shorthand::B(bias_index_),
                                                current_bias_guess_);
   }
@@ -1339,6 +1350,11 @@ void FactorGraphEstimator::calculate_gate_centers() {
     gate.position.position.z = it.second(2);
     gate_centers_.push_back(gate);
   }
+}
+
+std::vector<alphapilot::Point> FactorGraphEstimator::get_aruco_locations() {
+  lock_guard<mutex> aruco_locations_lck(aruco_locations_lck_);
+  return aruco_locations_;
 }
 
 } // estimator

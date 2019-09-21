@@ -156,6 +156,8 @@ class FactorGraphEstimator {
 
   virtual std::vector<alphapilot::Gate> get_gates();
 
+  std::vector<alphapilot::Point> get_aruco_locations();
+
  private:
   virtual void add_pose_factor();
   virtual void add_priors(const drone_state &initial_state);
@@ -198,6 +200,7 @@ class FactorGraphEstimator {
   std::mutex landmark_lck_; // lock to prevent reading and writing to landmark_locations_
   std::mutex preintegrator_lck_; // lock to control preintegrator
   std::mutex gate_lck_; // lock to control gate_centers_
+  std::mutex aruco_locations_lck_; // lock to control aruco positions
 
   // index of the current state
   int index_ = 0;
@@ -253,6 +256,7 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
   std::map<int, alphapilot::Landmark> landmark_locations_;
+  std::vector<alphapilot::Point> aruco_locations_;
   std::vector<alphapilot::Gate> gate_centers_;
   // TODO change to pair of id and type
   std::map<int, std::string> id_to_landmark_map_;
