@@ -923,8 +923,36 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
                                                             tmp,
                                                             aruco_pose_prior_noise_));
       }
-      // create between factors for each corresponding set of points
-      // tl to tr
+      // add constraints to the graph
+      gtsam::noiseModel::Constrained::shared_ptr aruco_noise = noiseModel::Constrained::All(3);
+      current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base),
+                                                          symbol_shorthand::A(id_base + 1),
+                                                          aruco_length_,
+                                                          aruco_noise));
+      current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base),
+                                                          symbol_shorthand::A(id_base + 1),
+                                                          aruco_length_,
+                                                          aruco_noise));
+      current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base + 1),
+                                                          symbol_shorthand::A(id_base + 2),
+                                                          aruco_length_,
+                                                          aruco_noise));
+      current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base + 2),
+                                                          symbol_shorthand::A(id_base + 3),
+                                                          aruco_length_,
+                                                          aruco_noise));
+      current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base + 3),
+                                                          symbol_shorthand::A(id_base),
+                                                          aruco_length_,
+                                                          aruco_noise));
+      current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base),
+                                                          symbol_shorthand::A(id_base + 2),
+                                                          sqrt(2 * pow(aruco_length_, 2)),
+                                                          aruco_noise));
+      current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base + 1),
+                                                          symbol_shorthand::A(id_base + 3),
+                                                          sqrt(2 * pow(aruco_length_, 2)),
+                                                          aruco_noise));
       /*
       gtsam::noiseModel::Diagonal::shared_ptr aruco_constraint_noise = noiseModel::Isotropic::Sigma(3, 0.1);
       current_incremental_graph_->emplace_shared<RangeFactor<Pose3>>(symbol_shorthand::A(id_base),

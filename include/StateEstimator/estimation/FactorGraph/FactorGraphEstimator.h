@@ -277,6 +277,7 @@ class FactorGraphEstimator {
   std::map<std::string, bool> aruco_got_detections_from_;
   // list of all indexes of aruco we have seen
   std::unordered_set<int> aruco_indexes_;
+  double aruco_length_ = 0.2;
 };
 } // estimator
 } // StateEstimator
