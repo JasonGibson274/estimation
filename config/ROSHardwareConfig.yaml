@@ -21,12 +21,12 @@ factorGraphEstimator:
     invertZ: false
 
     # factor specific
-    accelNoiseSigma: 1.0
-    gyroNoiseSigma: 0.4
-    accelBiasRwSigma: 0.5
-    gyroBiasRwSigma: 0.5
+    accelNoiseSigma: 0.5
+    gyroNoiseSigma: 0.1
+    accelBiasRwSigma: 0.1
+    gyroBiasRwSigma: 0.1
     integrationErrorCov: 1e-4
-    biasAccOmegaInt: 0.4
+    biasAccOmegaInt: 0.1
 
     # bias noise
     biasNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
@@ -46,9 +46,10 @@ factorGraphEstimator:
       K: [602.8772177219314, 602.8880443100697, 0, 628.4051298263508, 373.66555567947336]
 
       # translation x, y, z
-      translation: [0.17, 0.0, 0.06]
+      translation: [0.17, 0.03, 0.06]
       # rotation matrix
-      rotation: [0.48380819, -0.87511682, -0.01000913, 0.22325713, 0.13446987, -0.96543985, 0.84621858, 0.46485309, 0.26043369]
+      #rotation: [0.48380819, -0.87511682, -0.01000913, 0.22325713, 0.13446987, -0.96543985, 0.84621858, 0.46485309, 0.26043369]
+      rotation: [ 0.48380819, 0.22325713, 0.84621858, -0.87511682, 0.13446987, 0.46485309, -0.01000913, -0.96543985, 0.26043369]
 
   arucoFactorParams:
     useArucoFactor: true

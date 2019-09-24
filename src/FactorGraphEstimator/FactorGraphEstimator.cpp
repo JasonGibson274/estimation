@@ -388,6 +388,30 @@ bool FactorGraphEstimator::object_close_to_gate(std::list<Landmark> gate, Landma
   return false;
 }
 
+void FactorGraphEstimator::print_values(std::shared_ptr<gtsam::Values> values) {
+  std::cout << "\nguess state guesses";
+  KeyFormatter keyFormatter = gtsam::DefaultKeyFormatter;
+  std::cout << "\nValues with " << values->size() << " values:" << std::endl;
+  for(auto key = values->begin(); key != values->end(); key++) {
+    cout << "Value (" << keyFormatter(key->key) << "): ";
+    Symbol symbol = Symbol(key->key);
+    if(symbol.chr() == 'x') {
+      Pose3 temp = key->value.cast<Pose3>();
+      std::cout << temp << "\n";
+    } else if(symbol.chr() == 'v') {
+      Vector3 temp = key->value.cast<Vector3>();
+      std::cout << temp.transpose() << "\n";
+    } else if(symbol.chr() == 'l' || symbol.chr() == 'a') {
+      Point3 temp = key->value.cast<Point3>();
+      std::cout << temp.transpose() << "\n";
+    } else if(symbol.chr() == 'b') {
+      gtsam::imuBias::ConstantBias temp = key->value.cast<imuBias::ConstantBias>();
+      std::cout << temp << "\n";
+    }
+  }
+  std::cout << "\nincremental graph with error" << std::endl;
+}
+
 /**
  * Adds the local factor graph that was constructed during the most recent
  * callbacks, then clears the graph for the next iteration.
@@ -429,27 +453,7 @@ void FactorGraphEstimator::run_optimize() {
 
   if (debug_) {
     history_.insert(*guesses_copy);
-    std::cout << "\nguess state guesses";
-    KeyFormatter keyFormatter = gtsam::DefaultKeyFormatter;
-    std::cout << "\nValues with " << guesses_copy->size() << " values:" << std::endl;
-    for(auto key = guesses_copy->begin(); key != guesses_copy->end(); key++) {
-      cout << "Value (" << keyFormatter(key->key) << "): ";
-      Symbol symbol = Symbol(key->key);
-      if(symbol.chr() == 'x') {
-        Pose3 temp = key->value.cast<Pose3>();
-        std::cout << temp << "\n";
-      } else if(symbol.chr() == 'v') {
-        Vector3 temp = key->value.cast<Vector3>();
-        std::cout << temp.transpose() << "\n";
-      } else if(symbol.chr() == 'l' || symbol.chr() == 'a') {
-        Point3 temp = key->value.cast<Point3>();
-        std::cout << temp.transpose() << "\n";
-      } else if(symbol.chr() == 'b') {
-        gtsam::imuBias::ConstantBias temp = key->value.cast<imuBias::ConstantBias>();
-        std::cout << temp << "\n";
-      }
-    }
-    std::cout << "\nincremental graph with error" << std::endl;
+    print_values(guesses_copy);
     graph_copy->printErrors(history_);
   }
 
@@ -457,6 +461,7 @@ void FactorGraphEstimator::run_optimize() {
 
   // run update and run optimization
   ISAM2Result results = isam_.update(*graph_copy, *guesses_copy);
+  Values optimized_values = isam_.calculateEstimate();
   // print out optimizations statistics
   optimization_stats_.variablesReeliminated = results.variablesReeliminated;
   optimization_stats_.variablesRelinearized = results.variablesRelinearized;
@@ -471,22 +476,22 @@ void FactorGraphEstimator::run_optimize() {
     optimization_stats_.errorAfter = -1;
   }
 
-  // TODO should I calculate the entire solutions or just single ones
   // set the guesses of state to the correct output, update to account for changes since last optimization
-  // TODO use covariance
-  Pose3 local_position_optimized = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(temp_index));
+  Pose3 local_position_optimized = optimized_values.at<Pose3>(symbol_shorthand::X(temp_index));
   Matrix pose_cov = isam_.marginalCovariance(symbol_shorthand::X(temp_index));
-  Vector3 local_velocity_optimized = isam_.calculateEstimate<Vector3>(symbol_shorthand::V(temp_index));
+  std::cout << "pose covariance = " << pose_cov << std::endl;
+  Vector3 local_velocity_optimized = optimized_values.at<Vector3>(symbol_shorthand::V(temp_index));
   Matrix vel_cov = isam_.marginalCovariance(symbol_shorthand::V(temp_index));
   if (use_imu_bias_ && use_imu_factors_) {
-    current_bias_guess_ = isam_.calculateEstimate<imuBias::ConstantBias>(symbol_shorthand::B(temp_bias_index));
+    current_bias_guess_ = optimized_values.at<imuBias::ConstantBias>(symbol_shorthand::B(temp_bias_index));
   }
 
   std::unique_lock<std::mutex> landmark_lck_guard(landmark_lck_);
   // calculate the locations of the landmarks
   landmark_locations_.clear();
   for(int i = 0; i < gate_landmark_index_; i++) {
-    Point3 landmark = isam_.calculateEstimate<Point3>(symbol_shorthand::L(i));
+    // TODO handle covariance
+    Point3 landmark = optimized_values.at<Point3>(symbol_shorthand::L(i));
     alphapilot::Landmark new_landmark;
     new_landmark.position.x = landmark.x();
     new_landmark.position.y = landmark.y();
@@ -506,36 +511,33 @@ void FactorGraphEstimator::run_optimize() {
   calculate_gate_centers();
 
   // calculate the centers of aruco
-  if(debug_) {
-    std::cout << "\nARUCO POSITIONS\n" << std::endl;
-  }
   aruco_locations_lck_.lock();
   aruco_locations_.clear();
   aruco_locations_.reserve(aruco_indexes_.size() * 4);
   for(int id_base : aruco_indexes_) {
-    Vector3 aruco;
-    aruco << 0, 0, 0;
     int num_points = 0;
     for(int i = 0; i < 4; i++) {
-      if (isam_.valueExists(symbol_shorthand::A(id_base + i))) {
-        Point3 temp = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
-        std::cout << "\033[1;31mAruco " << id_base + i << ": ";
-        //print_projection(temp_index, temp, camera_map["left_right"], Point2());
-        std::cout << "\033[0m" << std::endl;
-        alphapilot::Point pos;
-        pos.x = temp.x();
-        pos.y = temp.y();
-        pos.z = temp.z();
+      if (optimized_values.exists(symbol_shorthand::A(id_base + i))) {
+        Point3 aruco = optimized_values.at<Point3>(symbol_shorthand::A(id_base + i));
+        alphapilot::PointWithCovariance pos;
+        pos.point.x = aruco.x();
+        pos.point.y = aruco.y();
+        pos.point.z = aruco.z();
+
+        Matrix aruco_cov = isam_.marginalCovariance(symbol_shorthand::A(id_base + i));
+        std::cout << "aruco cov" << aruco_cov << std::endl;
+        // TODO check ordering
+        for(int j = 0; j < 3; j++) {
+          for(int k = 0; k < 3; k++) {
+            pos.covariance[j * 3 + k] = aruco_cov(j, k);
+          }
+        }
+
         aruco_locations_.push_back(pos);
-        aruco += temp.vector();
         num_points++;
       } else {
         std::cout << "Aruco " << id_base << i << " does not exist in isam" << std::endl;
       }
-    }
-    aruco /= num_points;
-    if(debug_) {
-      std::cout << "Aruco with id " << (id_base - 1) / 10 << ": " << aruco.transpose() << std::endl;
     }
   }
   aruco_locations_lck_.unlock();
@@ -560,7 +562,6 @@ void FactorGraphEstimator::run_optimize() {
   // get the current state
   drone_state current_state = current_pose_estimate_;
 
-  /*
   if(debug_) {
     std::cout << "\ntemp_index = " << temp_index << "\n"
               << "Position\n" << local_position_optimized << "\n"
@@ -568,7 +569,6 @@ void FactorGraphEstimator::run_optimize() {
               << "Current State: " << current_state << "\n"
               << "Bias guess: " << current_bias_guess_ << std::endl;
   }
-   */
   if (debug_) {
     std::cout << "Bias Guess: " << current_bias_guess_ << std::endl;
   }
@@ -585,13 +585,11 @@ void FactorGraphEstimator::run_optimize() {
   Point3 trans_update = Point3(current_state.x - previous_state.x, current_state.y - previous_state.y,
                                current_state.z - previous_state.z);
   Pose3 update = Pose3(rot_update, trans_update);
-  /*
   if (debug_) {
     std::cout << "update pos = " << update << "\n";
     std::cout << "update vel = " <<  (gtsam::Vector3(current_state.x_dot, current_state.y_dot, current_state.z_dot)
           - gtsam::Vector3(previous_state.x_dot, previous_state.y_dot, previous_state.z_dot)).transpose() << std::endl;
   }
-   */
 
   trans_update = Point3(previous_state.x + trans_update.x(),
           previous_state.y + trans_update.y(), previous_state.z + trans_update.z());
@@ -622,6 +620,14 @@ void FactorGraphEstimator::run_optimize() {
   current_pose_estimate_.x_dot = current_velocity_guess_[0];
   current_pose_estimate_.y_dot = current_velocity_guess_[1];
   current_pose_estimate_.z_dot = current_velocity_guess_[2];
+
+  // set covariance
+  for(int i = 0; i < 6; i++) {
+    for(int j = 0; j < 6; j++) {
+      current_pose_estimate_.position_covariance[i * 6 + j] = pose_cov(i, j);
+    }
+  }
+
 }
 
 /**
@@ -655,13 +661,6 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   double invert_x = invert_x_ ? -1.0 : 1.0;
   double invert_y = invert_y_ ? -1.0 : 1.0;
   double invert_z = invert_z_ ? -1.0 : 1.0;
-
-  imu_data->x_accel = 0;
-  imu_data->y_accel = 0;
-  imu_data->z_accel = 9.81;
-  imu_data->roll_vel = 0.0;
-  imu_data->pitch_vel = 0.0;
-  imu_data->yaw_vel = 0.0;
 
   // updates the current guesses of position
   Vector3 accel = Vector3(imu_data->x_accel * invert_x, imu_data->y_accel * invert_y, imu_data->z_accel * invert_z);
@@ -921,12 +920,13 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
         gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(id_base + i), tmp);
         // TODO use the orientation to create a new position for each
         current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
-                                                            tmp,
+                                                            prior,
                                                             aruco_pose_prior_noise_));
       }
       // create between factors for each corresponding set of points
       // tl to tr
-      gtsam::noiseModel::Diagonal::shared_ptr aruco_constraint_noise = noiseModel::Isotropic::Sigma(1, 0.05);
+      /*
+      gtsam::noiseModel::Diagonal::shared_ptr aruco_constraint_noise = noiseModel::Isotropic::Sigma(1, 0.0001);
       current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base),
                                                 symbol_shorthand::A(id_base + 1),
                                                 0.2,
@@ -950,6 +950,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
                                                                       symbol_shorthand::A(id_base + 3),
                                                                       0.28,
                                                                       aruco_constraint_noise);
+                                                                      */
       aruco_indexes_.insert(id_base);
     }
 
@@ -960,6 +961,10 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
               detection_coords, aruco_camera_noise_, symbol_shorthand::X(image_index),
               symbol_shorthand::A(id_base + i), camera.K, camera.transform);
       current_incremental_graph_->push_back(projectionFactor);
+      std::cout << "\033[1;31mAruco " << id_base + i << ": ";
+      // TODO get the actual location of the point in 3D for comparison
+      //print_projection(image_index, , camera_map["left_right"], Point2());
+      std::cout << "\033[0m" << std::endl;
       // if(debug_) {
       //   // TODO generalize
       //   Point3 point = Point3(3.0, 2.2, 1);
@@ -1297,6 +1302,9 @@ void FactorGraphEstimator::register_camera(const std::string name,
                                              camera_info->s,
                                              camera_info->u0,
                                              camera_info->v0);
+
+  //Rot3 new_rot = Rot3::Ypr(0, -50 * DEG_TO_RAD , 0);
+  //std::cout << "rot mat = " << new_rot << std::endl;
   cam.transform = Pose3(*rotation, *translation);
 
 
@@ -1398,7 +1406,7 @@ void FactorGraphEstimator::calculate_gate_centers() {
   }
 }
 
-std::vector<alphapilot::Point> FactorGraphEstimator::get_aruco_locations() {
+std::vector<alphapilot::PointWithCovariance> FactorGraphEstimator::get_aruco_locations() {
   lock_guard<mutex> aruco_locations_lck(aruco_locations_lck_);
   return aruco_locations_;
 }

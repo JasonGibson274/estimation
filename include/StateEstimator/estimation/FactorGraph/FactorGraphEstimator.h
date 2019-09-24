@@ -155,7 +155,7 @@ class FactorGraphEstimator {
 
   virtual std::vector<alphapilot::Gate> get_gates();
 
-  std::vector<alphapilot::Point> get_aruco_locations();
+  std::vector<alphapilot::PointWithCovariance> get_aruco_locations();
 
  private:
   virtual void register_camera(const std::string name,
@@ -170,6 +170,7 @@ class FactorGraphEstimator {
   void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
   void calculate_gate_centers();
   void assign_gate_ids(std::shared_ptr<GateDetections> detection_msg);
+  void print_values(std::shared_ptr<gtsam::Values> values);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
@@ -259,7 +260,7 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
   std::map<int, alphapilot::Landmark> landmark_locations_;
-  std::vector<alphapilot::Point> aruco_locations_;
+  std::vector<alphapilot::PointWithCovariance> aruco_locations_;
   std::vector<alphapilot::Gate> gate_centers_;
   // TODO change to pair of id and type
   std::map<int, std::string> id_to_landmark_map_;
