@@ -892,7 +892,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
     if(aruco_indexes_.find(id_base) == aruco_indexes_.end()) {
       Point3 location = Point3(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
       // use the relative distance to get estimate of aruco position
-      //double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
+      double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
       //gtsam::PinholeCamera<Cal3_S2> gt_cam(camera.transform, *camera.K);
       //auto projection_thing = gt_cam.backproject(Point2(detection.points[0].x, detection.points[0].y), dist_aruco);
       //Point3 prior = current_position_guess_ * projection_thing;
@@ -920,37 +920,19 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
         gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(id_base + i), tmp);
         // TODO use the orientation to create a new position for each
         current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
-                                                            prior,
+                                                            tmp,
                                                             aruco_pose_prior_noise_));
       }
       // create between factors for each corresponding set of points
       // tl to tr
       /*
-      gtsam::noiseModel::Diagonal::shared_ptr aruco_constraint_noise = noiseModel::Isotropic::Sigma(1, 0.0001);
-      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base),
-                                                symbol_shorthand::A(id_base + 1),
-                                                0.2,
-                                                aruco_constraint_noise);
-
-      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base + 1),
-                                                                      symbol_shorthand::A(id_base + 2),
-                                                                      0.2,
-                                                                      aruco_constraint_noise);
-
-      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base + 2),
-                                                                      symbol_shorthand::A(id_base + 3),
-                                                                      0.2,
-                                                                      aruco_constraint_noise);
-
-      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base),
-                                                                      symbol_shorthand::A(id_base + 2),
-                                                                      0.28,
-                                                                      aruco_constraint_noise);
-      current_incremental_graph_->emplace_shared<RangeFactor<Point3>>(symbol_shorthand::A(id_base + 1),
-                                                                      symbol_shorthand::A(id_base + 3),
-                                                                      0.28,
+      gtsam::noiseModel::Diagonal::shared_ptr aruco_constraint_noise = noiseModel::Isotropic::Sigma(3, 0.1);
+      current_incremental_graph_->emplace_shared<RangeFactor<Pose3>>(symbol_shorthand::A(id_base),
+                                                                      symbol_shorthand::X(image_index),
+                                                                      dist_aruco,
                                                                       aruco_constraint_noise);
                                                                       */
+      // TODO hard constraint on how the aruco markers are related
       aruco_indexes_.insert(id_base);
     }
 
