@@ -9,20 +9,21 @@ factorGraphEstimator:
     cacheLinearizedFactors: false
     enableDetailedResults: true
     findUnusedFactorSlots: false
-    gaussianWildfireThreshold: 0.001
+    gaussianWildfireThreshold : 0.001
 
   imuFactorParams:
     # general
+    imuDebug: true
     useImuFactor: true
     useImuBias: false
-    imuBiasIncr: 1
+    imuBiasIncr: 3
     invertX: false
     invertY: false
     invertZ: false
 
     # factor specific
-    accelNoiseSigma: 1.0
-    gyroNoiseSigma: 0.1
+    accelNoiseSigma: 0.25
+    gyroNoiseSigma: 0.25
     accelBiasRwSigma: 0.1
     gyroBiasRwSigma: 0.1
     integrationErrorCov: 1e-4
@@ -39,72 +40,66 @@ factorGraphEstimator:
 
   cameraConfig:
     # sets the names of the cameras to be registered
-    cameraNames: [left_left, right_right, right_left]
+    cameraNames: [left_right]
 
-    left_left:
+    left_right:
       # fx, fy, s, u0, v0
-      K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
+      K: [602.8772177219314, 602.8880443100697, 0, 628.4051298263508, 373.66555567947336]
 
-      # transform x, y, z, qw, qx, qy, qz
-      transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
-
-    right_right:
-      # fx, fy, s, u0, v0
-      K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
-
-      # transform x, y, z, qw, qx, qy, qz
-      transform: [0.0, 0.0, 0.0, -0.5, 0.5, -0.5, 0.5]
-
-    right_left:
-      # fx, fy, s, u0, v0
-      #K: [554.51459272200827, 555.90737894298354, 0.0, 591.51794469954359, 313.39437257145255] # mono 4
-      # SIM
-      K: [5.5224483608761557e+02, 5.5224483608761557e+02, 0.0, 600, 360]
-
-      # transform x, y, z, qw, qx, qy, qz
-      transform: [0.17100, -0.03000, -0.07000, 0.9159759, -0.1205899, 0.3794092, 0.0499494]
+      # translation x, y, z
+      translation: [0.17, 0.03, 0.06]
+      # rotation matrix
+      #rotation: [0.48380819, -0.87511682, -0.01000913, 0.22325713, 0.13446987, -0.96543985, 0.84621858, 0.46485309, 0.26043369]
+      rotation: [ 0.48380819, 0.22325713, 0.84621858, -0.87511682, 0.13446987, 0.46485309, -0.01000913, -0.96543985, 0.26043369]
 
   arucoFactorParams:
     useArucoFactor: true
-    projectionPixelNoise: 10
+    useArucoConstraints: true
+    useArucoRange: true
+    useProjectionDebug: false
 
-    #m, m, m
-    arucoPriorNoise: [10, 10, 10]
+    # m from corner to corner of aruco
+    arucoLength: 0.2
+
+    # what cameras we will wait for detections from before creating a state
+    enabledCameras: [left_right]
+
+    #rad, rad, rad, m, m, m
+    arucoNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+
+    # error in px
+    projectionPixelNoise: 50
+
+    # m, m, m
+    arucoPriorNoise: [4.0, 4.0, 4.0]
 
   projectionFactorParams:
     useProjectionFactor: true
     defaultPixelNoise: 10.0
-    pairingThreshold: 0.1 # allowed time stamp difference
-    # if the distance to gate centers will be use to assign ids
-    reassignGateIds: true
+    pairingThreshold: 0.02 # allowed time stamp difference
 
     # list of valid objects
-    objects: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    objects: [1, 2, 3, 4]
     objectList:
-      0_noise: 10 # whole gate
       1_noise: 10 # top left corner
       2_noise: 10 # top right corner
       3_noise: 10 # bottom right corner
       4_noise: 10 # bottom left corner
-      5_noise: 10 # left logo
-      6_noise: 10 # right logo
-      7_noise: 10 # top airr
-      8_noise: 10 # bottom airr
 
-    # list of known objects to track, no - allowed
-    trackedObjects: [12_3, 10_1]
-    objectPriorNoise: [2.0, 2.0, 2.0]
+    # list of known objects to track, no _ allowed
+    trackedObjects: []
+    objectPriorNoise: [10.0, 10.0, 10.0]
     # TODO Get the actual prediction
     # Gate#_type#
     objectPriors:
-      12_3: [18.90706, 15.73291, 9.14324]
-      10_1: [18.15111, 3.631447, 7.229498]
+      1_1: [10, 0, 0]
 
   priorConfig:
     # x, y, z, qw, qx, qy, qz, x_dot, y_dot, z_dot
     initial_state: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    initial_vel_noise: 0.1
+    initial_vel_noise: 0.01
     # rad, rad, rad, m, m, m
-    initial_pose_noise: [0.25, 0.25, 0.25, 0.5, 0.5, 0.5]
+    initial_pose_noise: [0.05, 0.05, 0.05, 0.15, 0.15, 0.15]
     initial_bias_noise: 0.1
+
 

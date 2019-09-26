@@ -13,6 +13,7 @@ factorGraphEstimator:
 
   imuFactorParams:
     # general
+    imuDebug: true
     useImuFactor: true
     useImuBias: false
     imuBiasIncr: 3
@@ -53,6 +54,12 @@ factorGraphEstimator:
 
   arucoFactorParams:
     useArucoFactor: true
+    useArucoConstraints: true
+    useArucoRange: true
+    useProjectionDebug: false
+
+    # m from corner to corner of aruco
+    arucoLength: 0.2
 
     # what cameras we will wait for detections from before creating a state
     enabledCameras: [left_right]

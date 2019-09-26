@@ -176,6 +176,7 @@ class FactorGraphEstimator {
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
+  bool full_history_debug_ = false; // TODO config
   // if any thing has updated the estimate of position
   bool position_update_ = false;
   // current estimate of the position of the drone
@@ -237,6 +238,7 @@ class FactorGraphEstimator {
   const double GRAVITY = 9.81;
   gtsam::noiseModel::Diagonal::shared_ptr bias_noise_;
   gtsam::imuBias::ConstantBias current_bias_guess_;
+  bool imu_debug_ = false;
 
   // ========= PRIOR CONFIG =========
   prior_config prior_config_;
@@ -262,7 +264,6 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   std::map<std::string, gtsam_camera> camera_map;
   std::map<int, alphapilot::Landmark> landmark_locations_;
-  std::vector<alphapilot::PointWithCovariance> aruco_locations_;
   std::vector<alphapilot::Gate> gate_centers_;
   // TODO change to pair of id and type
   std::map<int, std::string> id_to_landmark_map_;
@@ -276,9 +277,15 @@ class FactorGraphEstimator {
   // ========== ARUCO FACTOR =============
   gtsam::noiseModel::Diagonal::shared_ptr aruco_camera_noise_;
   gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_prior_noise_;
+  gtsam::noiseModel::Diagonal::shared_ptr aruco_range_noise_;
+  gtsam::noiseModel::Constrained::shared_ptr aruco_constraint_noise_;
+  std::vector<alphapilot::PointWithCovariance> aruco_locations_;
   std::map<std::string, bool> aruco_got_detections_from_;
   // list of all indexes of aruco we have seen
   std::unordered_set<int> aruco_indexes_;
+  bool use_aruco_constraints_ = false;
+  bool use_range_for_aruco_ = true;
+  bool use_projection_debug_ = false;
   double aruco_length_ = 0.2;
 };
 } // estimator
