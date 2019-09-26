@@ -13,6 +13,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/slam/ProjectionFactor.h>
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/sam/RangeFactor.h>
+#include <gtsam/slam/SmartProjectionPoseFactor.h>
 
 #include <alphapilot_common/Utils.h>
 
@@ -139,6 +140,7 @@ class FactorGraphEstimator {
   virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);
   virtual void aruco_callback(const std::shared_ptr<alphapilot::ArucoDetections> msg);
   virtual void timing_callback(const double timestamp);
+  virtual void smart_projection_callback(const std::shared_ptr<alphapilot::CameraDetections> detections);
   virtual optimization_stats get_optimization_stats();
 
   virtual std::vector<alphapilot::Landmark> get_landmark_positions();

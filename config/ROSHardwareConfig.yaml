@@ -15,14 +15,14 @@ factorGraphEstimator:
     # general
     useImuFactor: true
     useImuBias: false
-    imuBiasIncr: 10
+    imuBiasIncr: 3
     invertX: false
     invertY: false
     invertZ: false
 
     # factor specific
-    accelNoiseSigma: 0.5
-    gyroNoiseSigma: 0.1
+    accelNoiseSigma: 0.25
+    gyroNoiseSigma: 0.25
     accelBiasRwSigma: 0.1
     gyroBiasRwSigma: 0.1
     integrationErrorCov: 1e-4
@@ -61,10 +61,10 @@ factorGraphEstimator:
     arucoNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
     # error in px
-    projectionPixelNoise: 10
+    projectionPixelNoise: 50
 
     # m, m, m
-    arucoPriorNoise: [1.0, 1.0, 1.0]
+    arucoPriorNoise: [4.0, 4.0, 4.0]
 
   projectionFactorParams:
     useProjectionFactor: true
@@ -92,7 +92,7 @@ factorGraphEstimator:
     initial_state: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     initial_vel_noise: 0.01
     # rad, rad, rad, m, m, m
-    initial_pose_noise: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+    initial_pose_noise: [0.05, 0.05, 0.05, 0.15, 0.15, 0.15]
     initial_bias_noise: 0.1
 
 

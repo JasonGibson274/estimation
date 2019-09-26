@@ -458,6 +458,8 @@ void FactorGraphEstimator::run_optimize() {
   }
 
   auto start = std::chrono::steady_clock::now();
+  //history_.print();
+  //isam_.getFactorsUnsafe().printErrors(history_);
 
   // run update and run optimization
   ISAM2Result results = isam_.update(*graph_copy, *guesses_copy);
@@ -479,7 +481,6 @@ void FactorGraphEstimator::run_optimize() {
   // set the guesses of state to the correct output, update to account for changes since last optimization
   Pose3 local_position_optimized = optimized_values.at<Pose3>(symbol_shorthand::X(temp_index));
   Matrix pose_cov = isam_.marginalCovariance(symbol_shorthand::X(temp_index));
-  std::cout << "pose covariance = " << pose_cov << std::endl;
   Vector3 local_velocity_optimized = optimized_values.at<Vector3>(symbol_shorthand::V(temp_index));
   Matrix vel_cov = isam_.marginalCovariance(symbol_shorthand::V(temp_index));
   if (use_imu_bias_ && use_imu_factors_) {
@@ -525,8 +526,6 @@ void FactorGraphEstimator::run_optimize() {
         pos.point.z = aruco.z();
 
         Matrix aruco_cov = isam_.marginalCovariance(symbol_shorthand::A(id_base + i));
-        std::cout << "aruco cov" << aruco_cov << std::endl;
-        // TODO check ordering
         for(int j = 0; j < 3; j++) {
           for(int k = 0; k < 3; k++) {
             pos.covariance[j * 3 + k] = aruco_cov(j, k);
@@ -892,7 +891,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
     if(aruco_indexes_.find(id_base) == aruco_indexes_.end()) {
       Point3 location = Point3(detection.pose.position.x, detection.pose.position.y, detection.pose.position.z);
       // use the relative distance to get estimate of aruco position
-      double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
+      //double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
       //gtsam::PinholeCamera<Cal3_S2> gt_cam(camera.transform, *camera.K);
       //auto projection_thing = gt_cam.backproject(Point2(detection.points[0].x, detection.points[0].y), dist_aruco);
       //Point3 prior = current_position_guess_ * projection_thing;
@@ -920,11 +919,12 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
         gtsam_current_state_initial_guess_->insert(symbol_shorthand::A(id_base + i), tmp);
         // TODO use the orientation to create a new position for each
         current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
-                                                            tmp,
+                                                            prior,
                                                             aruco_pose_prior_noise_));
       }
       // add constraints to the graph
-      gtsam::noiseModel::Constrained::shared_ptr aruco_noise = noiseModel::Constrained::All(3);
+      gtsam::noiseModel::Constrained::shared_ptr aruco_noise = noiseModel::Constrained::All(1);
+      /*
       current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base),
                                                           symbol_shorthand::A(id_base + 1),
                                                           aruco_length_,
@@ -953,16 +953,10 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
                                                           symbol_shorthand::A(id_base + 3),
                                                           sqrt(2 * pow(aruco_length_, 2)),
                                                           aruco_noise));
-      /*
-      gtsam::noiseModel::Diagonal::shared_ptr aruco_constraint_noise = noiseModel::Isotropic::Sigma(3, 0.1);
-      current_incremental_graph_->emplace_shared<RangeFactor<Pose3>>(symbol_shorthand::A(id_base),
-                                                                      symbol_shorthand::X(image_index),
-                                                                      dist_aruco,
-                                                                      aruco_constraint_noise);
-                                                                      */
-      // TODO hard constraint on how the aruco markers are related
+                                                          */
       aruco_indexes_.insert(id_base);
     }
+    double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
 
     for(unsigned int i = 0; i < detection.points.size(); i++) {
       GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
@@ -975,6 +969,14 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
       // TODO get the actual location of the point in 3D for comparison
       //print_projection(image_index, , camera_map["left_right"], Point2());
       std::cout << "\033[0m" << std::endl;
+
+
+      gtsam::noiseModel::Diagonal::shared_ptr aruco_constraint_noise = noiseModel::Isotropic::Sigma(1, 4.0);
+      current_incremental_graph_->emplace_shared<RangeFactor<Pose3, Point3>>(
+          symbol_shorthand::X(image_index),
+          symbol_shorthand::A(id_base + i),
+          dist_aruco,
+          aruco_constraint_noise);
       // if(debug_) {
       //   // TODO generalize
       //   Point3 point = Point3(3.0, 2.2, 1);
@@ -1419,6 +1421,10 @@ void FactorGraphEstimator::calculate_gate_centers() {
 std::vector<alphapilot::PointWithCovariance> FactorGraphEstimator::get_aruco_locations() {
   lock_guard<mutex> aruco_locations_lck(aruco_locations_lck_);
   return aruco_locations_;
+}
+
+void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alphapilot::CameraDetections> detections) {
+
 }
 
 } // estimator
