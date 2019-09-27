@@ -96,10 +96,6 @@ if (ESTIMATION_BUILD_EXAMPLES_ALWAYS)
 	add_subdirectory(main)
 endif()
 
-foreach(state_plugin ${PROJECT_PLUGINS})
-	message(STATUS "Building ${state_plugin}...")
-endforeach()
-
 # Install all library header files
 install(
   DIRECTORY include/${PROJECT_NAME}
@@ -113,6 +109,23 @@ install(
   DESTINATION include
   FILES_MATCHING PATTERN "*.h"
   )
+
+
+export(
+		EXPORT ${PROJECT_NAME}-targets
+		FILE "${PROJECT_BINARY_DIR}/${PROJECT_NAME}-targets.cmake"
+)
+
+export(PACKAGE ${PROJECT_NAME})
+
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+		${PROJECT_SOURCE_DIR}/cmake/Modules/Config.cmake.in
+		${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
+		INSTALL_DESTINATION ${PROJECT_BINARY_DIR}
+		PATH_VARS
+)
 
 set(${PROJECT_NAME}_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include PARENT)
 # TODO set up properly lower
