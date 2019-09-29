@@ -91,9 +91,13 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
 
       std::vector<double> rotation_vec = alphapilot::get<std::vector<double>>("rotation", camera_config[camera_name],
                                                                               {1,0,0,0,1,0,0,0,1});
-      std::shared_ptr<Rot3> rotation = std::make_shared<Rot3>(rotation_vec[0], rotation_vec[1], rotation_vec[2],
-      rotation_vec[3], rotation_vec[4], rotation_vec[5], rotation_vec[6], rotation_vec[7], rotation_vec[8]);
-
+      std::shared_ptr<Rot3> rotation;
+      if(rotation_vec.size() == 9) {
+        rotation = std::make_shared<Rot3>(rotation_vec[0], rotation_vec[1], rotation_vec[2],
+                                          rotation_vec[3], rotation_vec[4], rotation_vec[5], rotation_vec[6], rotation_vec[7], rotation_vec[8]);
+      } else if(rotation_vec.size() == 4) {
+        rotation = std::make_shared<Rot3>(rotation_vec[0], rotation_vec[1], rotation_vec[2], rotation_vec[3]);
+      }
       std::shared_ptr<alphapilot::camera_info> cam_info = std::make_shared<alphapilot::camera_info>();
 
       std::vector<double> K = alphapilot::get<std::vector<double>>("K", camera_config[camera_name],
