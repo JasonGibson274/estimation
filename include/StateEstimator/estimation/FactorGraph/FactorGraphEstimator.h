@@ -173,6 +173,7 @@ class FactorGraphEstimator {
   void calculate_gate_centers();
   void assign_gate_ids(std::shared_ptr<GateDetections> detection_msg);
   void print_values(std::shared_ptr<gtsam::Values> values);
+  gtsam::Point3 generate_aruco_priors(const gtsam::Pose3& pos_copy, const alphapilot::Pose& pose, int index, double size);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
