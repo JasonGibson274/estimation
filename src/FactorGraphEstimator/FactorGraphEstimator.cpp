@@ -258,6 +258,20 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     odometry_pose_noise_ = noiseModel::Diagonal::Sigmas(pose_noise);
   }
 
+  if(config["smartPoseProjectionFactors"]) {
+    YAML::Node smart_pose_config = config["smartPoseProjectionFactors"];
+
+    // use smart factors
+    use_smart_pose_projection_factor_ = alphapilot::get<bool>("useSmartPoseProjectionFactor", smart_pose_config, false);
+    if(!alphapilot::get<bool>("useDegenerateSolutions", smart_pose_config, false)) {
+      projection_params_.setDegeneracyMode(DegeneracyMode::ZERO_ON_DEGENERACY);
+    }
+    projection_params_.setLandmarkDistanceThreshold(alphapilot::get<double>("landmarkDistanceThreshold",
+                                                                            smart_pose_config, 10.0));
+    projection_params_.setDynamicOutlierRejectionThreshold(alphapilot::get<double>(
+        "dynamicOutlierRejectionThreshold", smart_pose_config, 10.0));
+  }
+
   #if VERBOSE
     std::cout << "VERBOSE Enabled"
   #endif
@@ -463,10 +477,22 @@ void FactorGraphEstimator::run_optimize() {
 
   graph_lck_guard.unlock();
 
+  smart_detections_lck_.lock();
+
+  while(!smart_detections_queue_.empty()) {
+    smart_detection detection = smart_detections_queue_.front();
+    // TODO fix logging
+    std::cout << "adding detection on " << detection.uuid << " at index " << detection.index << " of " << detection.detection << std::endl;
+    id_to_smart_landmarks_[detection.uuid]->add(detection.detection, symbol_shorthand::X(detection.index));
+    smart_detections_queue_.pop_front();
+  }
+  smart_detections_lck_.unlock();
+
   if (debug_) {
     history_.insert(*guesses_copy);
     print_values(guesses_copy);
     graph_copy->printErrors(history_);
+    std::cout << "finished printing graph" << std::endl;
   }
 
   auto start = std::chrono::steady_clock::now();
@@ -475,7 +501,9 @@ void FactorGraphEstimator::run_optimize() {
 
   // run update and run optimization
   ISAM2Result results = isam_.update(*graph_copy, *guesses_copy);
+  std::cout << "finished update" << std::endl;
   Values optimized_values = isam_.calculateEstimate();
+  std::cout << "finished optimzation" << std::endl;
   // print out optimizations statistics
   optimization_stats_.variablesReeliminated = results.variablesReeliminated;
   optimization_stats_.variablesRelinearized = results.variablesRelinearized;
@@ -547,6 +575,27 @@ void FactorGraphEstimator::run_optimize() {
     }
   }
   aruco_locations_lck_.unlock();
+
+  smart_locations_lck_.lock();
+  smart_detections_lck_.lock();
+  for(auto it = id_to_smart_landmarks_.begin(); it != id_to_smart_landmarks_.end(); it++) {
+    boost::optional<Point3> point = it->second->point();
+    // if the point exists and is valid
+    if(point) {
+      alphapilot::PointWithCovariance msg;
+      msg.point.x = point->x();
+      msg.point.y = point->y();
+      msg.point.z = point->z();
+      if(smart_locations_.find(it->first) == smart_locations_.end()) {
+         // insert into map
+         smart_locations_.insert(std::make_pair(it->first, std::vector<alphapilot::PointWithCovariance>()));
+      }
+      smart_locations_[it->first].push_back(msg);
+    }
+  }
+  // TODO calculate the centers of arbitrary numbers of smart projection locations
+  smart_detections_lck_.unlock();
+  smart_locations_lck_.unlock();
 
   // get timing statistics
   ++optimization_stats_.optimizationIterations;
@@ -1028,7 +1077,6 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
     return;
   }
 
-  // TODO add parameter to enabling or disabling this
   // groups the gates and sets the ids correctly
   if(reassign_gate_ids_) {
     assign_gate_ids(landmark_data);
@@ -1418,8 +1466,58 @@ std::vector<alphapilot::PointWithCovariance> FactorGraphEstimator::get_aruco_loc
   return aruco_locations_;
 }
 
-void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alphapilot::CameraDetections> detections) {
+std::map<string, std::vector<alphapilot::PointWithCovariance>> FactorGraphEstimator::get_smart_locations() {
+  std::lock_guard<std::mutex> smart_locations_lck(smart_locations_lck_);
+  return smart_locations_;
+}
 
+void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alphapilot::CameraDetections> detections) {
+  if (!use_smart_pose_projection_factor_) {
+    return;
+  }
+
+  // if there is no position updates this is unconstrained
+  if (camera_map.find(detections->camera) == camera_map.end()) {
+    std::cout << "ERROR using invalid camera name " << detections->camera << " make sure to register a camera first"
+              << std::endl;
+  }
+
+  int image_index = find_camera_index(detections->time);
+  if(image_index == -1) {
+    std::cout << "ERROR: invalid index: -1 for the camera on detection callback" << std::endl;
+    return;
+  }
+
+  for(CameraDetection detection : detections->detections) {
+    std::string uuid = detection.type+"_"+detection.id;
+
+    auto landmark_factor_it = id_to_smart_landmarks_.find(uuid);
+    if(landmark_factor_it == id_to_smart_landmarks_.end()) {
+      // New Landmark - Add a new Factor
+      gtsam_camera camera = camera_map[detections->camera];
+
+      SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor;
+      // TODO use the initial distance metric to set the estimate
+      if (object_noises_.find(detection.type) != object_noises_.end()) {
+        smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
+            object_noises_[detection.type], camera.K, camera.transform, projection_params_);
+      } else {
+        smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
+            default_camera_noise_, camera.K, camera.transform, projection_params_);
+      }
+
+      id_to_smart_landmarks_[uuid] = smartFactor;
+
+      std::lock_guard<std::mutex> graph_lck(graph_lck_);
+      current_incremental_graph_->push_back(smartFactor);
+    }
+    std::lock_guard<std::mutex> smart_detections_lck(smart_detections_lck_);
+    smart_detection smart_det;
+    smart_det.detection = gtsam::Point2(detection.x, detection.y);
+    smart_det.index = image_index;
+    smart_det.uuid = uuid;
+    smart_detections_queue_.push_back(smart_det);
+  }
 }
 
 } // estimator

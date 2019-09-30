@@ -113,6 +113,12 @@ struct optimization_stats {
   double errorAfter = 0.0;
 };
 
+struct smart_detection {
+  gtsam::Point2 detection;
+  int index;
+  std::string uuid = "";
+};
+
 std::ostream& operator <<(std::ostream& os, const optimization_stats& stats) {
   os << "\nOptimization Results:\n"
          << "\nReelimintated: " << stats.variablesReeliminated
@@ -158,6 +164,8 @@ class FactorGraphEstimator {
   virtual std::vector<alphapilot::Gate> get_gates();
 
   std::vector<alphapilot::PointWithCovariance> get_aruco_locations();
+
+  std::map<std::string, std::vector<alphapilot::PointWithCovariance>> get_smart_locations();
 
  private:
   virtual void register_camera(const std::string name,
@@ -209,6 +217,8 @@ class FactorGraphEstimator {
   std::mutex preintegrator_lck_; // lock to control preintegrator
   std::mutex gate_lck_; // lock to control gate_centers_
   std::mutex aruco_locations_lck_; // lock to control aruco positions
+  std::mutex smart_detections_lck_; // lock to control smart detections queue
+  std::mutex smart_locations_lck_; // lock to control smart detection locations
 
   // index of the current state
   int index_ = 0;
@@ -288,6 +298,14 @@ class FactorGraphEstimator {
   bool use_range_for_aruco_ = true;
   bool use_projection_debug_ = false;
   double aruco_length_ = 0.2;
+
+  // ========== SMART POSE PROJECTION FACTOR =============
+  bool use_smart_pose_projection_factor_ = false;
+  std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> id_to_smart_landmarks_;
+  std::list<smart_detection> smart_detections_queue_;
+  gtsam::SmartProjectionParams projection_params_;
+  std::map<std::string, std::vector<alphapilot::PointWithCovariance>> smart_locations_;
+  // TODO configurable noise
 };
 } // estimator
 } // StateEstimator
