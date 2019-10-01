@@ -141,7 +141,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
             "trackedObjects", camera_config, {});
     for(auto &object_name : tracked_objects) {
       if(!camera_config["objectPriors"][object_name]) {
-        std::cout << "ERROR: cannot find prior for object " << object_name << std::endl;
+        std::cout << "WARNING: cannot find prior for object " << object_name << std::endl;
       }
       std::shared_ptr<alphapilot::Landmark> new_landmark = std::make_shared<alphapilot::Landmark>();
       std::vector<double> location = alphapilot::get<std::vector<double>>(object_name, camera_config["objectPriors"], {});
@@ -301,7 +301,7 @@ void FactorGraphEstimator::timing_callback(const double timestamp) {
     time_map_.insert(std::make_pair(index_, timestamp));
   } else {
     preintegrator_lck_.unlock();
-    std::cout << "ERROR: no position update before timing callback, not creating a state" << std::endl;
+    std::cout << "WARNING: no position update before timing callback, not creating a state" << std::endl;
   }
 }
 
@@ -315,6 +315,7 @@ std::vector<alphapilot::Landmark> FactorGraphEstimator::get_landmark_positions()
 }
 
 void FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detection_msg) {
+  // TODO assumes all gates are valid detections then does a pairing that minimizes error greedily, this is bad
   lock_guard<mutex> gate_lck(gate_lck_);
 
   // detected id, actual gate id, distance
@@ -444,16 +445,15 @@ void FactorGraphEstimator::print_values(std::shared_ptr<gtsam::Values> values) {
  * callbacks, then clears the graph for the next iteration.
  * This optimizes the entire state trajectory
  */
-void FactorGraphEstimator::run_optimize() {
-  // TODO make a boolean and return false if we fail to lock
+bool FactorGraphEstimator::run_optimize() {
   std::unique_lock<std::mutex> opt_lck_guard(optimization_lck_, std::try_to_lock);
   if(!opt_lck_guard.owns_lock()) {
-    std::cout << "ERROR: trying to have multiple optimziations of factor graph running at the same time" << std::endl;
-    return;
+    std::cout << "WARNING: trying to have multiple optimziations of factor graph running at the same time" << std::endl;
+    return false;
   }
   if (current_incremental_graph_->empty()) {
     optimization_lck_.unlock();
-    return;
+    return false;
   }
 
   // run the optimization and output the final state
@@ -544,6 +544,8 @@ void FactorGraphEstimator::run_optimize() {
     // if it is a center of a gate store it in that vector directly
   }
   landmark_lck_guard.unlock();
+
+  // converts landmarks into gate centers
   calculate_gate_centers();
 
   // calculate the centers of aruco
@@ -578,6 +580,8 @@ void FactorGraphEstimator::run_optimize() {
 
   smart_locations_lck_.lock();
   smart_detections_lck_.lock();
+
+  // get the locations tracked by the smartPoseProjectionFactor
   for(auto it = id_to_smart_landmarks_.begin(); it != id_to_smart_landmarks_.end(); it++) {
     boost::optional<Point3> point = it->second->point();
     // if the point exists and is valid
@@ -593,7 +597,6 @@ void FactorGraphEstimator::run_optimize() {
       smart_locations_[it->first].push_back(msg);
     }
   }
-  // TODO calculate the centers of arbitrary numbers of smart projection locations
   smart_detections_lck_.unlock();
   smart_locations_lck_.unlock();
 
@@ -679,7 +682,7 @@ void FactorGraphEstimator::run_optimize() {
       current_pose_estimate_.position_covariance[i * 6 + j] = pose_cov(i, j);
     }
   }
-
+  return true;
 }
 
 /**
@@ -701,7 +704,7 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   last_imu_time_ = imu_data->time;
   current_pose_estimate_.time = last_imu_time_;
   if (dt <= 0 || dt > 10) {
-    std::cout << "ERROR: cannot use imu reading with dt <= 0 || dt > 10" << std::endl;
+    std::cout << "WARNING: cannot use imu reading with dt <= 0 || dt > 10" << std::endl;
     return;
   }
   // -1 if invert, 1 if !invert
@@ -921,7 +924,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
   }
 
   if (camera_map.find(msg->camera) == camera_map.end()) {
-    std::cout << "ERROR using invalid camera name " << msg->camera << " make sure to register a camera first"
+    std::cout << "WARNING using invalid camera name " << msg->camera << " make sure to register a camera first"
               << std::endl;
     return;
   }
@@ -929,7 +932,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
   int image_index = find_camera_index(msg->time);
   // TODO there is some time delay in aruco, check to make sure we have the right image
   if(image_index == -1) {
-    std::cout << "ERROR: invalid index: -1 for the camera on aruco callback time: "
+    std::cout << "WARNING: invalid index: -1 for the camera on aruco callback time: "
               << msg->time << " candidates: " << time_map_.size() << std::endl;
     return;
   }
@@ -1067,13 +1070,13 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
 
   // if there is no position updates this is unconstrained
   if (camera_map.find(landmark_data->camera_name) == camera_map.end()) {
-    std::cout << "ERROR using invalid camera name " << landmark_data->camera_name << " make sure to register a camera first"
+    std::cout << "WARNING using invalid camera name " << landmark_data->camera_name << " make sure to register a camera first"
               << std::endl;
   }
 
   int image_index = find_camera_index(landmark_data->time);
   if(image_index == -1) {
-    std::cout << "ERROR: invalid index: -1 for the camera on detection callback" << std::endl;
+    std::cout << "WARNING: invalid index: -1 for the camera on detection callback" << std::endl;
     return;
   }
 
@@ -1097,7 +1100,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
         id = landmark_to_id_map_[l_id];
       } else {
         // TODO if fails to find and index that matches, handle
-        std::cout << "\n\nERROR: invalid subfeature gate: " << seen_gate.gate << subfeature
+        std::cout << "\n\nWARNING: invalid subfeature gate: " << seen_gate.gate << subfeature
                   << "\nmust register landmark first\n\n" << std::endl;
         return;
       }
@@ -1347,7 +1350,7 @@ void FactorGraphEstimator::register_camera(const std::string name,
                                            const std::shared_ptr<gtsam::Rot3> rotation,
                                            const std::shared_ptr<camera_info> camera_info) {
   if (name.empty()) {
-    std::cout << "ERROR: invalid name of camera cannot be empty" << std::endl;
+    std::cout << "WARNING: invalid name of camera cannot be empty" << std::endl;
   }
   // TODO validate the camera intrinsics make sense
   gtsam_camera cam;
@@ -1379,11 +1382,11 @@ int FactorGraphEstimator::find_camera_index(double time) {
   }
   // if negative dt
   if(time_map_.empty()) {
-    std::cout << "ERROR: time map is empty cannot match camera frame" << std::endl;
+    std::cout << "WARNING: time map is empty cannot match camera frame" << std::endl;
     return -1;
   }
   if(time_map_.rbegin()->second + pairing_threshold_ < time) {
-    std::cout << "ERROR: time " << time << " is much larger than " << time_map_.rbegin()->second + pairing_threshold_ << "no correspondence" << std::endl;
+    std::cout << "WARNING: time " << time << " is much larger than " << time_map_.rbegin()->second + pairing_threshold_ << "no correspondence" << std::endl;
     return -1;
   }
   for(auto it = time_map_.rbegin(); it != time_map_.rend(); it++) {
@@ -1415,13 +1418,17 @@ void FactorGraphEstimator::print_projection(int image_index, Point3 location, gt
   if(print) {
     //std::cout << "\n\nposition " << position << std::endl;
     //std::cout << "\ncamera transform " << camera.transform << std::endl;
-    position = position.compose(camera.transform);
-    std::cout << "\nCamera World Position: " << position << std::endl;
-    PinholeCamera<Cal3_S2> test_cam(position, *camera.K);
-    Point2 measurement = test_cam.project(location);
-    std::cout << "Location: " << location << "\n";
-    std::cout << "Detection got: " << detection_coords << "\n"
-              << "Expected     : " << measurement<< std::endl;
+    try {
+      position = position.compose(camera.transform);
+      std::cout << "\nCamera World Position: " << position << std::endl;
+      PinholeCamera<Cal3_S2> test_cam(position, *camera.K);
+      Point2 measurement = test_cam.project(location);
+      std::cout << "Location: " << location << "\n";
+      std::cout << "Detection got: " << detection_coords << "\n"
+                << "Expected     : " << measurement<< std::endl;
+    } catch (gtsam::CheiralityException& cheiralityException) {
+      std::cout << "WARNING: caught cheirality exception when projecting point" << std::endl;
+    }
 
   }
 }
@@ -1478,13 +1485,13 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
 
   // if there is no position updates this is unconstrained
   if (camera_map.find(detections->camera) == camera_map.end()) {
-    std::cout << "ERROR using invalid camera name " << detections->camera << " make sure to register a camera first"
+    std::cout << "WARNING using invalid camera name " << detections->camera << " make sure to register a camera first"
               << std::endl;
   }
 
   int image_index = find_camera_index(detections->time);
   if(image_index == -1) {
-    std::cout << "ERROR: invalid index: -1 for the camera on detection callback" << std::endl;
+    std::cout << "WARNING: invalid index: -1 for the camera on detection callback" << std::endl;
     return;
   }
 

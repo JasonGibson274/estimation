@@ -151,7 +151,10 @@ class FactorGraphEstimator {
 
   virtual std::vector<alphapilot::Landmark> get_landmark_positions();
 
-  virtual void run_optimize();
+  /*
+   * returns false if another optimization is running and it fails to lock, or if no position updates
+   */
+  virtual bool run_optimize();
 
   void group_gates();
   bool object_in_gate(std::list<alphapilot::Landmark> gate, std::string l_type);
