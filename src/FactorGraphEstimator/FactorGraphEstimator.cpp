@@ -492,7 +492,10 @@ bool FactorGraphEstimator::run_optimize() {
     history_.insert(*guesses_copy);
     print_values(guesses_copy);
     graph_copy->printErrors(history_);
-    std::cout << "finished printing graph" << std::endl;
+    for(auto it = id_to_smart_landmarks_.begin(); it != id_to_smart_landmarks_.end(); it++) {
+      it->second->print();
+      std::cout << "error: " << it->second->error(history_) << std::endl;
+    }
   }
 
   auto start = std::chrono::steady_clock::now();
@@ -582,6 +585,7 @@ bool FactorGraphEstimator::run_optimize() {
   smart_detections_lck_.lock();
 
   // get the locations tracked by the smartPoseProjectionFactor
+  smart_locations_.clear();
   for(auto it = id_to_smart_landmarks_.begin(); it != id_to_smart_landmarks_.end(); it++) {
     boost::optional<Point3> point = it->second->point();
     // if the point exists and is valid
@@ -590,11 +594,12 @@ bool FactorGraphEstimator::run_optimize() {
       msg.point.x = point->x();
       msg.point.y = point->y();
       msg.point.z = point->z();
-      if(smart_locations_.find(it->first) == smart_locations_.end()) {
+      std::string type = it->first.substr(0, it->first.find("_"));
+      if(smart_locations_.find(type) == smart_locations_.end()) {
          // insert into map
-         smart_locations_.insert(std::make_pair(it->first, std::vector<alphapilot::PointWithCovariance>()));
+         smart_locations_.insert(std::make_pair(type, std::vector<alphapilot::PointWithCovariance>()));
       }
-      smart_locations_[it->first].push_back(msg);
+      smart_locations_[type].push_back(msg);
     }
   }
   smart_detections_lck_.unlock();
@@ -682,6 +687,11 @@ bool FactorGraphEstimator::run_optimize() {
       current_pose_estimate_.position_covariance[i * 6 + j] = pose_cov(i, j);
     }
   }
+
+  if(debug_) {
+    std::cout << "===========================" << std::endl;
+  }
+
   return true;
 }
 
@@ -1386,7 +1396,8 @@ int FactorGraphEstimator::find_camera_index(double time) {
     return -1;
   }
   if(time_map_.rbegin()->second + pairing_threshold_ < time) {
-    std::cout << "WARNING: time " << time << " is much larger than " << time_map_.rbegin()->second + pairing_threshold_ << "no correspondence" << std::endl;
+    std::cout << "WARNING: current time: " << time << " is threshold ahead of the most recent time:  "
+    << time_map_.rbegin()->second + pairing_threshold_ << " no correspondence found" << std::endl;
     return -1;
   }
   for(auto it = time_map_.rbegin(); it != time_map_.rend(); it++) {
