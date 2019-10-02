@@ -482,8 +482,9 @@ bool FactorGraphEstimator::run_optimize() {
   while(!smart_detections_queue_.empty()) {
     smart_detection detection = smart_detections_queue_.front();
     // TODO fix logging
-    std::cout << "adding detection on " << detection.uuid << " at index " << detection.index << " of " << detection.detection << std::endl;
-    id_to_smart_landmarks_[detection.uuid]->add(detection.detection, symbol_shorthand::X(detection.index));
+    std::cout << "adding detection on " << detection.uuid << " at index " << detection.state_index << " of " << detection.detection << std::endl;
+    // TODO should also add camera key detection came from
+    id_to_smart_landmarks_[detection.uuid]->add(detection.detection, symbol_shorthand::X(detection.state_index));
     smart_detections_queue_.pop_front();
   }
   smart_detections_lck_.unlock();
@@ -1463,18 +1464,27 @@ void FactorGraphEstimator::calculate_gate_centers() {
   lock_guard<mutex> gate_lck(gate_lck_);
   lock_guard<mutex> landmark_lck(landmark_lck_);
   // add all the positions together
+  // x, y, z, count
+  /*
   std::map<std::string, Vector4> map;
   for(auto & landmark_location : landmark_locations_) {
+    std::cout << "on gate " << landmark_location.second << std::endl;
     std::string gate_id = landmark_location.second.id;
     if(map.count(gate_id) == 0) {
       Vector4 temp;
       temp << 0, 0, 0, 0;
-      map[gate_id] = temp;
+      std::cout << "temp: " << temp.transpose() << std::endl;
+      map.insert(std::make_pair(gate_id, temp));
+      std::cout << "made pair" << std::endl;
     }
+
     Vector4 temp;
     temp << landmark_location.second.position.x, landmark_location.second.position.y, landmark_location.second.position.z, 1;
+    std::cout << "about to add" << std::endl;
     map[gate_id] += temp;
+    std::cout << "added" << std::endl;
   }
+  std::cout << "calcualted the gate cetners, now setting positions" << std::endl;
   for(auto & it : map) {
     Gate gate;
     gate.id = it.first;
@@ -1486,6 +1496,7 @@ void FactorGraphEstimator::calculate_gate_centers() {
     gate.position.position.z = it.second(2);
     gate_centers_.push_back(gate);
   }
+   */
 }
 
 std::vector<alphapilot::PointWithCovariance> FactorGraphEstimator::get_aruco_locations() {
@@ -1508,6 +1519,7 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
   if (camera_map.find(detections->camera) == camera_map.end()) {
     std::cout << "WARNING using invalid camera name " << detections->camera << " make sure to register a camera first"
               << std::endl;
+    return;
   }
 
   int image_index = find_camera_index(detections->time);
@@ -1542,7 +1554,7 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
     std::lock_guard<std::mutex> smart_detections_lck(smart_detections_lck_);
     smart_detection smart_det;
     smart_det.detection = gtsam::Point2(detection.x, detection.y);
-    smart_det.index = image_index;
+    smart_det.state_index = image_index;
     smart_det.uuid = uuid;
     smart_detections_queue_.push_back(smart_det);
   }

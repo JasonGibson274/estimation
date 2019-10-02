@@ -97,11 +97,13 @@ struct estimator_config {
   prior_config priorConfig;
 };
 
+/*
 struct detection {
   std::string id = "";
   gtsam::Point2 point = gtsam::Point2(-1,-1);
   int index = 0;
 };
+ */
 
 struct optimization_stats {
   double optimizationTime = 0.0;
@@ -117,8 +119,9 @@ struct optimization_stats {
 
 struct smart_detection {
   gtsam::Point2 detection;
-  int index;
+  int state_index;
   std::string uuid = "";
+
 };
 
 std::ostream& operator <<(std::ostream& os, const optimization_stats& stats) {
