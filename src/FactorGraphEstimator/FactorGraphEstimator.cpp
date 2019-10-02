@@ -1499,6 +1499,7 @@ std::map<string, std::vector<alphapilot::PointWithCovariance>> FactorGraphEstima
 }
 
 void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alphapilot::CameraDetections> detections) {
+  // TODO this does not seperate into what camera is being used for each landmark
   if (!use_smart_pose_projection_factor_) {
     return;
   }
