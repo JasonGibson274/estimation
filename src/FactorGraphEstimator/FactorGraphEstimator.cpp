@@ -521,6 +521,18 @@ bool FactorGraphEstimator::run_optimize() {
     optimization_stats_.errorAfter = -1;
   }
 
+  // get timing statistics
+  ++optimization_stats_.optimizationIterations;
+  double optimization_iterations = optimization_stats_.optimizationIterations;
+  auto end = std::chrono::steady_clock::now();
+  std::chrono::duration<double> diff = end - start;
+  double optimization_time = diff.count();
+  optimization_stats_.optimizationTimeAvg = (optimization_iterations - 1.0)/optimization_iterations*optimization_stats_.optimizationTimeAvg +
+                                            optimization_time/optimization_iterations;
+  optimization_stats_.optimizationTime = optimization_time;
+
+  start = std::chrono::steady_clock::now();
+
   // set the guesses of state to the correct output, update to account for changes since last optimization
   Pose3 local_position_optimized = optimized_values.at<Pose3>(symbol_shorthand::X(temp_index));
   Matrix pose_cov = isam_.marginalCovariance(symbol_shorthand::X(temp_index));
@@ -605,15 +617,12 @@ bool FactorGraphEstimator::run_optimize() {
   smart_detections_lck_.unlock();
   smart_locations_lck_.unlock();
 
-  // get timing statistics
-  ++optimization_stats_.optimizationIterations;
-  double optimization_iterations = optimization_stats_.optimizationIterations;
-  auto end = std::chrono::steady_clock::now();
-  std::chrono::duration<double> diff = end - start;
-  double optimization_time = diff.count();
-  optimization_stats_.optimizationTimeAvg = (optimization_iterations - 1.0)/optimization_iterations*optimization_stats_.optimizationTimeAvg +
-          optimization_time/optimization_iterations;
-  optimization_stats_.optimizationTime = optimization_time;
+  end = std::chrono::steady_clock::now();
+  diff = end - start;
+  optimization_time = diff.count();
+  optimization_stats_.getLandmarksTimeAvg = (optimization_iterations - 1.0)/optimization_iterations*optimization_stats_.getLandmarksTimeAvg +
+                                            optimization_time/optimization_iterations;
+  optimization_stats_.getLandmarksTime = optimization_time;
 
   if(debug_) {
     std::cout << optimization_stats_ << std::endl;

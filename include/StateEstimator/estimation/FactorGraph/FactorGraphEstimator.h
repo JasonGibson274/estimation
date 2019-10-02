@@ -106,6 +106,8 @@ struct detection {
 struct optimization_stats {
   double optimizationTime = 0.0;
   double optimizationTimeAvg = 0.0;
+  double getLandmarksTime = 0.0;
+  double getLandmarksTimeAvg = 0.0;
   int optimizationIterations = 0;
   int variablesReeliminated = 0;
   int variablesRelinearized = 0;
@@ -131,7 +133,9 @@ std::ostream& operator <<(std::ostream& os, const optimization_stats& stats) {
   }
   os << "\noptimizationIterations: " << stats.optimizationIterations
      << "\noptimizationTime: " << stats.optimizationTime
-     << "\noptimizationTimeAvg: " << stats.optimizationTimeAvg;
+     << "\noptimizationTimeAvg: " << stats.optimizationTimeAvg
+     << "\ngetLandmarksTime: " << stats.getLandmarksTime
+     << "\ngetLandmarksTimeAvg: " << stats.getLandmarksTimeAvg;
   return os;
 };
 
