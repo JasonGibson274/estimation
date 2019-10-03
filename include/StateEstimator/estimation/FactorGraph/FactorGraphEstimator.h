@@ -155,6 +155,7 @@ class FactorGraphEstimator {
   virtual void timing_callback(const double timestamp);
   virtual void smart_projection_callback(const std::shared_ptr<alphapilot::CameraDetections> detections);
   virtual optimization_stats get_optimization_stats();
+  virtual void add_constraints_to_gates(std::map<std::string, double> size_map);
 
   virtual std::vector<alphapilot::Landmark> get_landmark_positions();
 

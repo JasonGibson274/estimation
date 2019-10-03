@@ -1560,5 +1560,45 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
   }
 }
 
-} // estimator
+void FactorGraphEstimator::add_constraints_to_gates(std::map<std::string, double> size_map) {
+  // makes things so much worse
+  /*
+  std::lock_guard<std::mutex> graph_lck(graph_lck_);
+  for(int i = 1; i < 24; i++) {
+    // TODO get id's of all of the right ones
+    double size = size_map[std::to_string(i)];
+    int id_1 = landmark_to_id_map_[std::to_string(i)+"_1"];
+    int id_2 = landmark_to_id_map_[std::to_string(i)+"_2"];
+    int id_3 = landmark_to_id_map_[std::to_string(i)+"_3"];
+    int id_4 = landmark_to_id_map_[std::to_string(i)+"_4"];
+
+    current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::L(id_1),
+                                                        symbol_shorthand::L(id_2),
+                                                        size,
+                                                        aruco_range_noise_));
+    current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::L(id_2),
+                                                        symbol_shorthand::L(id_3),
+                                                        size,
+                                                        aruco_range_noise_));
+    current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::L(id_3),
+                                                        symbol_shorthand::L(id_4),
+                                                        size,
+                                                        aruco_range_noise_));
+    current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::L(id_1),
+                                                        symbol_shorthand::L(id_4),
+                                                        size,
+                                                        aruco_range_noise_));
+    current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::L(id_1),
+                                                        symbol_shorthand::L(id_3),
+                                                        sqrt(2 * pow(size, 2)),
+                                                        aruco_range_noise_));
+    current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::L(id_2),
+                                                        symbol_shorthand::L(id_4),
+                                                        sqrt(2 * pow(size, 2)),
+                                                        aruco_range_noise_));
+  }
+   */
+}
+
+  } // estimator
 } // StateEstimator
