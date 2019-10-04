@@ -291,14 +291,19 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
 }
 
 void FactorGraphEstimator::timing_callback(const double timestamp) {
+  std::lock_guard<std::mutex> timing_lck(timing_lck_);
   preintegrator_lck_.lock();
   if(position_update_) {
     preintegrator_lck_.unlock();
-    add_imu_factor();
-    add_pose_factor();
-    lock_guard<mutex> graph_lck(graph_lck_);
-    index_++;
-    time_map_.insert(std::make_pair(index_, timestamp));
+    // check if we should add a new state
+    if(time_map_.empty() || timestamp > time_map_.rbegin()->second) {
+      add_imu_factor();
+      add_pose_factor();
+      lock_guard<mutex> graph_lck(graph_lck_);
+      index_++;
+      time_map_.insert(std::make_pair(index_, timestamp));
+    } else {
+    }
   } else {
     preintegrator_lck_.unlock();
     std::cout << "WARNING: no position update before timing callback, not creating a state" << std::endl;
@@ -338,7 +343,8 @@ void FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detec
     auto top = pq.top();
     std::string detected = std::get<0>(top);
     std::string actual = std::get<1>(top);
-    if(detected_ids.count(detected) == 0 && actual_ids.count(actual) == 0) {
+    double distance = std::get<2>(top);
+    if(detected_ids.count(detected) == 0 && actual_ids.count(actual) == 0 && distance < gate_dist_threshold_) {
       detected_ids.insert(detected);
       actual_ids.insert(actual);
       detected_to_actual[detected] = actual;
@@ -1529,7 +1535,7 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
   }
 
   for(CameraDetection detection : detections->detections) {
-    std::string uuid = detection.type+"_"+detection.id;
+    std::string uuid = detections->camera+"_"+detection.type+"_"+detection.id;
 
     auto landmark_factor_it = id_to_smart_landmarks_.find(uuid);
     if(landmark_factor_it == id_to_smart_landmarks_.end()) {
@@ -1538,6 +1544,8 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
 
       SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor;
       // TODO use the initial distance metric to set the estimate
+
+      gtsam::SmartProjectionParams projection_params;
       if (object_noises_.find(detection.type) != object_noises_.end()) {
         smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
             object_noises_[detection.type], camera.K, camera.transform, projection_params_);

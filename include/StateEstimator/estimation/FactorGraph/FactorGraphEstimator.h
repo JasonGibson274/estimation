@@ -230,6 +230,7 @@ class FactorGraphEstimator {
   std::mutex aruco_locations_lck_; // lock to control aruco positions
   std::mutex smart_detections_lck_; // lock to control smart detections queue
   std::mutex smart_locations_lck_; // lock to control smart detection locations
+  std::mutex timing_lck_; // lock to prevent duplicate timing calls
 
   // index of the current state
   int index_ = 0;
@@ -295,6 +296,7 @@ class FactorGraphEstimator {
   double pairing_threshold_ = 0.1;
   gtsam::noiseModel::Diagonal::shared_ptr landmark_prior_noise_;
   bool reassign_gate_ids_ = true;
+  double gate_dist_threshold_ = 10;
 
   // ========== ARUCO FACTOR =============
   gtsam::noiseModel::Diagonal::shared_ptr aruco_camera_noise_;
