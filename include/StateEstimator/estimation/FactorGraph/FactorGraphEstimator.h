@@ -190,7 +190,7 @@ class FactorGraphEstimator {
   int find_camera_index(double time);
   void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
   void calculate_gate_centers();
-  void assign_gate_ids(std::shared_ptr<GateDetections> detection_msg);
+  bool assign_gate_ids(std::shared_ptr<GateDetections> detection_msg, int image_index);
   void print_values(std::shared_ptr<gtsam::Values> values);
   gtsam::Point3 generate_aruco_priors(const gtsam::Pose3& pos_copy, const alphapilot::Pose& pose, int index, double size);
 

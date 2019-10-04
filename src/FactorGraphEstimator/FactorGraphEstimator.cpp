@@ -292,18 +292,18 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
 
 void FactorGraphEstimator::timing_callback(const double timestamp) {
   std::lock_guard<std::mutex> timing_lck(timing_lck_);
+  if(!time_map_.empty() && timestamp <= time_map_.rbegin()->second) {
+     return;
+  }
   preintegrator_lck_.lock();
   if(position_update_) {
     preintegrator_lck_.unlock();
     // check if we should add a new state
-    if(time_map_.empty() || timestamp > time_map_.rbegin()->second) {
-      add_imu_factor();
-      add_pose_factor();
-      lock_guard<mutex> graph_lck(graph_lck_);
-      index_++;
-      time_map_.insert(std::make_pair(index_, timestamp));
-    } else {
-    }
+    add_imu_factor();
+    add_pose_factor();
+    lock_guard<mutex> graph_lck(graph_lck_);
+    index_++;
+    time_map_.insert(std::make_pair(index_, timestamp));
   } else {
     preintegrator_lck_.unlock();
     std::cout << "WARNING: no position update before timing callback, not creating a state" << std::endl;
@@ -319,19 +319,41 @@ std::vector<alphapilot::Landmark> FactorGraphEstimator::get_landmark_positions()
   return result;
 }
 
-void FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detection_msg) {
+bool FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detection_msg, int image_index) {
   // TODO assumes all gates are valid detections then does a pairing that minimizes error greedily, this is bad
   lock_guard<mutex> gate_lck(gate_lck_);
 
+  // find the pose that matches the time stamp
+  graph_lck_.lock();
+  Pose3 position_copy;
+  if(isam_.valueExists(symbol_shorthand::X(image_index))) {
+    position_copy = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(image_index));
+  } else if(gtsam_current_state_initial_guess_->exists(symbol_shorthand::X(image_index))) {
+    position_copy = gtsam_current_state_initial_guess_->at<Pose3>(symbol_shorthand::X(image_index));
+  } else {
+    position_copy = Pose3(current_position_guess_);
+  }
+  //std::cout << "position copy: " << position_copy << std::endl;
+  graph_lck_.unlock();
+
   // detected id, actual gate id, distance
   auto comp = [](std::tuple<std::string, std::string, double> a, std::tuple<std::string, std::string, double> b ) {
-    return std::get<2>(a) < std::get<2>(b);
+    return std::get<2>(a) > std::get<2>(b);
   };
-  std::priority_queue<std::tuple<std::string, std::string, double>, std::vector<std::tuple<std::string, std::string, double>>, decltype(comp)> pq(comp);
+  std::priority_queue<std::tuple<std::string, std::string, double>,
+          std::vector<std::tuple<std::string, std::string, double>>, decltype(comp)> pq(comp);
   for(GateDetection detection : detection_msg->landmarks) {
     // iterate through the gates to see which one is closest to the pose
     for(Gate gate : gate_centers_) {
-      double dist = alphapilot::dist(detection.pose.position, gate.position.position);
+      Point3 det_pose = position_copy.transformFrom(Point3(detection.pose.position.x, detection.pose.position.y,
+              detection.pose.position.z));
+      //std::cout << "making distance for detected: " << detection.gate << " and landmark " << gate.id << std::endl;
+      //std::cout << "detection: " << detection.pose.position << std::endl;
+      Point3 gate_pose(gate.position.position.x, gate.position.position.y, gate.position.position.z);
+      //std::cout << "det pose: " <<  det_pose.transpose() << std::endl;
+      //std::cout << "gate pose: " <<  gate_pose.transpose() << std::endl;
+      double dist =  gate_pose.dist(det_pose);
+      //std::cout << "dist: " << dist << "\n" << std::endl;
       pq.push(std::tie(detection.gate, gate.id, dist));
     }
   }
@@ -339,12 +361,20 @@ void FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detec
   std::unordered_set<std::string> detected_ids;
   std::unordered_set<std::string> actual_ids;
   std::map<std::string, std::string> detected_to_actual;
-  while(!pq.empty() && detected_ids.size() < detection_msg->landmarks.size()) {
+  // iterate while both queue and detection have elements, if we go above dist threshold stop
+  if(debug_ && !pq.empty()) {
+    std::cout << "top value" << std::get<2>(pq.top()) << std::endl;
+  }
+  while(!pq.empty() && detected_ids.size() < detection_msg->landmarks.size() && std::get<2>(pq.top()) < gate_dist_threshold_) {
     auto top = pq.top();
     std::string detected = std::get<0>(top);
     std::string actual = std::get<1>(top);
     double distance = std::get<2>(top);
-    if(detected_ids.count(detected) == 0 && actual_ids.count(actual) == 0 && distance < gate_dist_threshold_) {
+    if(debug_) {
+      std::cout << "comparing detected: " << detected << " actual: " << actual << " dist: " << distance << std::endl;
+    }
+    if(detected_ids.count(detected) == 0 && actual_ids.count(actual) == 0) {
+      std::cout << detected << "->" << actual << std::endl;
       detected_ids.insert(detected);
       actual_ids.insert(actual);
       detected_to_actual[detected] = actual;
@@ -353,8 +383,12 @@ void FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detec
   }
   // set the ids to be what was calculated earlier
   for(auto it = detection_msg->landmarks.begin(); it != detection_msg->landmarks.end(); it++) {
+    if(debug_) {
+      std::cout << "mapping gate id " << it->gate << " to " << detected_to_actual[it->gate] << std::endl;
+    }
     it->gate = detected_to_actual[it->gate];
   }
+  return !detected_to_actual.empty();
 }
 
 void FactorGraphEstimator::group_gates() {
@@ -1108,7 +1142,9 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
 
   // groups the gates and sets the ids correctly
   if(reassign_gate_ids_) {
-    assign_gate_ids(landmark_data);
+    if(!assign_gate_ids(landmark_data, image_index)) {
+      std::cout << "WARNING: failed to assign any new ids to the gates" << std::endl;
+    }
   }
 
   for (const auto &seen_gate : landmark_data->landmarks) {
@@ -1126,7 +1162,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
         id = landmark_to_id_map_[l_id];
       } else {
         // TODO if fails to find and index that matches, handle
-        std::cout << "\n\nWARNING: invalid subfeature gate: " << seen_gate.gate << subfeature
+        std::cout << "\n\nWARNING: invalid gate: " << seen_gate.gate << "\n for subfeature: " << subfeature
                   << "\nmust register landmark first\n\n" << std::endl;
         return;
       }
@@ -1347,7 +1383,7 @@ void FactorGraphEstimator::add_priors(const drone_state &initial_state) {
 
   last_pose_state_ = current_pose_estimate_;
 
-  //run_optimize();
+  run_optimize();
 }
 
 drone_state FactorGraphEstimator::latest_state(bool optimize) {
@@ -1467,42 +1503,38 @@ std::vector<alphapilot::Gate> FactorGraphEstimator::get_gates() {
 
 // also under landmark_lck
 void FactorGraphEstimator::calculate_gate_centers() {
+  // TODO there could be an issue with alignment here
   lock_guard<mutex> gate_lck(gate_lck_);
   lock_guard<mutex> landmark_lck(landmark_lck_);
+  gate_centers_.clear();
   // add all the positions together
   // x, y, z, count
-  /*
-  std::map<std::string, Vector4> map;
+  std::map<std::string, Vector6> map;
   for(auto & landmark_location : landmark_locations_) {
-    std::cout << "on gate " << landmark_location.second << std::endl;
     std::string gate_id = landmark_location.second.id;
     if(map.count(gate_id) == 0) {
-      Vector4 temp;
-      temp << 0, 0, 0, 0;
-      std::cout << "temp: " << temp.transpose() << std::endl;
+      Vector6 temp;
+      temp << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
       map.insert(std::make_pair(gate_id, temp));
-      std::cout << "made pair" << std::endl;
     }
 
-    Vector4 temp;
-    temp << landmark_location.second.position.x, landmark_location.second.position.y, landmark_location.second.position.z, 1;
-    std::cout << "about to add" << std::endl;
+    gtsam::Vector6 temp;
+    temp << landmark_location.second.position.x, landmark_location.second.position.y, landmark_location.second.position.z, 1, 0, 0;
     map[gate_id] += temp;
-    std::cout << "added" << std::endl;
   }
-  std::cout << "calcualted the gate cetners, now setting positions" << std::endl;
   for(auto & it : map) {
     Gate gate;
     gate.id = it.first;
+    std::cout << "accum for gate: " << it.second.transpose() << std::endl;
     // find the average position
     it.second /= it.second(3);
     // set the postion of each gate
     gate.position.position.x = it.second(0);
     gate.position.position.y = it.second(1);
     gate.position.position.z = it.second(2);
+    std::cout << "Gate: " << gate.id << " center: " << it.second.transpose() << std::endl;
     gate_centers_.push_back(gate);
   }
-   */
 }
 
 std::vector<alphapilot::PointWithCovariance> FactorGraphEstimator::get_aruco_locations() {
