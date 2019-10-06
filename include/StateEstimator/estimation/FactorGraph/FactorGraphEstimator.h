@@ -179,7 +179,8 @@ class FactorGraphEstimator {
   std::map<std::string, std::vector<alphapilot::PointWithCovariance>> get_smart_locations();
 
   void register_camera(const std::string name,
-                       const std::vector<double> transform,
+                       const std::vector<double> translation,
+                       const std::vector<double> rotation,
                        const std::vector<double> intrinsics);
 
  private:
