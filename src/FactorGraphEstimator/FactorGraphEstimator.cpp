@@ -124,6 +124,8 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
 
     pairing_threshold_ = alphapilot::get<double>("pairingThreshold", camera_config, 0.1);
 
+    gate_dist_threshold_ = alphapilot::get<double>("gateDistThreshold", camera_config, 10.0);
+
     std::vector<std::string> object_names = alphapilot::get<std::vector<std::string>>("objects", camera_config, {});
     for (auto &object_name : object_names) {
       double noise = alphapilot::get<double>(object_name + "_noise", camera_config["objectList"], default_noise);
@@ -270,6 +272,17 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
                                                                             smart_pose_config, 10.0));
     projection_params_.setDynamicOutlierRejectionThreshold(alphapilot::get<double>(
         "dynamicOutlierRejectionThreshold", smart_pose_config, 10.0));
+
+
+    double default_noise = alphapilot::get<double>("defaultPixelNoise", smart_pose_config, 10.0);
+    smart_default_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
+    std::vector<std::string> object_names = alphapilot::get<std::vector<std::string>>("objects", smart_pose_config, {});
+    for (auto &object_name : object_names) {
+      double noise = alphapilot::get<double>(object_name + "_noise", smart_pose_config["objectList"], default_noise);
+      gtsam::noiseModel::Diagonal::shared_ptr
+              noise_model = noiseModel::Isotropic::Sigma(2, noise);  // one pixel in u and v
+      smart_object_noises_.insert(std::pair<std::string, gtsam::noiseModel::Diagonal::shared_ptr>(object_name, noise_model));
+    }
   }
 
   #if VERBOSE
@@ -291,7 +304,10 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
 }
 
 void FactorGraphEstimator::timing_callback(const double timestamp) {
-  std::lock_guard<std::mutex> timing_lck(timing_lck_);
+  std::unique_lock<std::mutex> timing_lck(timing_lck_, std::try_to_lock);
+  if(!timing_lck) {
+    return;
+  }
   if(!time_map_.empty() && timestamp <= time_map_.rbegin()->second) {
      return;
   }
@@ -320,7 +336,6 @@ std::vector<alphapilot::Landmark> FactorGraphEstimator::get_landmark_positions()
 }
 
 bool FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detection_msg, int image_index) {
-  // TODO assumes all gates are valid detections then does a pairing that minimizes error greedily, this is bad
   lock_guard<mutex> gate_lck(gate_lck_);
 
   // find the pose that matches the time stamp
@@ -386,8 +401,14 @@ bool FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detec
     if(debug_) {
       std::cout << "mapping gate id " << it->gate << " to " << detected_to_actual[it->gate] << std::endl;
     }
-    it->gate = detected_to_actual[it->gate];
+    // if we have a pairing use it, otherwise ignore the gate
+    if(detected_to_actual.count(it->gate) > 0) {
+      it->gate = detected_to_actual[it->gate];
+    } else {
+      it->gate = "-1";
+    }
   }
+  // TODO if an id is not set remove it from the list
   return !detected_to_actual.empty();
 }
 
@@ -521,8 +542,9 @@ bool FactorGraphEstimator::run_optimize() {
 
   while(!smart_detections_queue_.empty()) {
     smart_detection detection = smart_detections_queue_.front();
-    // TODO fix logging
-    std::cout << "adding detection on " << detection.uuid << " at index " << detection.state_index << " of " << detection.detection << std::endl;
+    if(debug_) {
+      std::cout << "adding detection on " << detection.uuid << " at index " << detection.state_index << " of " << detection.detection << std::endl;
+    }
     // TODO should also add camera key detection came from
     id_to_smart_landmarks_[detection.uuid]->add(detection.detection, symbol_shorthand::X(detection.state_index));
     smart_detections_queue_.pop_front();
@@ -990,7 +1012,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
   }
   gtsam_camera camera = camera_map[msg->camera];
   int image_index = find_camera_index(msg->time);
-  // TODO there is some time delay in aruco, check to make sure we have the right image
+  // if there is some time delay in aruco, check to make sure we have the right image
   if(image_index == -1) {
     std::cout << "WARNING: invalid index: -1 for the camera on aruco callback time: "
               << msg->time << " candidates: " << time_map_.size() << std::endl;
@@ -1164,14 +1186,13 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
         // TODO if fails to find and index that matches, handle
         std::cout << "\n\nWARNING: invalid gate: " << seen_gate.gate << "\n for subfeature: " << subfeature
                   << "\nmust register landmark first\n\n" << std::endl;
-        return;
+        continue;
       }
-      // TODO reimplement
-      /*
-      if(debug_) {
-        alphapilot::Landmark l = landmark_locations_[id];
+      // if the id is not valid
+      if(seen_gate.gate == "-1") {
+        std::cout << "\nWARNING: invalid gate id assigned by reassign gate ids, ignoring and continuing" << std::endl;
+        continue;
       }
-      */
       GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
       if (object_noises_.find(object_type) != object_noises_.end()) {
         projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
@@ -1580,10 +1601,10 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
       gtsam::SmartProjectionParams projection_params;
       if (object_noises_.find(detection.type) != object_noises_.end()) {
         smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
-            object_noises_[detection.type], camera.K, camera.transform, projection_params_);
+            smart_object_noises_[detection.type], camera.K, camera.transform, projection_params_);
       } else {
         smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
-            default_camera_noise_, camera.K, camera.transform, projection_params_);
+            smart_default_noise_, camera.K, camera.transform, projection_params_);
       }
 
       id_to_smart_landmarks_[uuid] = smartFactor;

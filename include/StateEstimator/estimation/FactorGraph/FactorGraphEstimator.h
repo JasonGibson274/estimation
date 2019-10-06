@@ -240,7 +240,12 @@ class FactorGraphEstimator {
   gtsam::Vector3 current_velocity_guess_;
 
   // values to store above
-  // X = pose, V = velocity, L = (x,y,z) of gate, A = offset to aruco
+  /*
+   * X(t) pose at time t
+   * V(t) velocity at time t
+   * L(t) landmark with id t
+   * A(201) top left corner of aruco marker 20
+   */
   std::shared_ptr<gtsam::Values> gtsam_current_state_initial_guess_;
 
   gtsam::ISAM2Params isam_parameters_;
@@ -304,7 +309,6 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr aruco_range_noise_;
   gtsam::noiseModel::Constrained::shared_ptr aruco_constraint_noise_;
   std::vector<alphapilot::PointWithCovariance> aruco_locations_;
-  std::map<std::string, bool> aruco_got_detections_from_;
   // list of all indexes of aruco we have seen
   std::unordered_set<int> aruco_indexes_;
   bool use_aruco_constraints_ = false;
@@ -318,7 +322,8 @@ class FactorGraphEstimator {
   std::list<smart_detection> smart_detections_queue_;
   gtsam::SmartProjectionParams projection_params_;
   std::map<std::string, std::vector<alphapilot::PointWithCovariance>> smart_locations_;
-  // TODO configurable noise
+  gtsam::noiseModel::Diagonal::shared_ptr smart_default_noise_;
+  std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> smart_object_noises_;
 };
 } // estimator
 } // StateEstimator
