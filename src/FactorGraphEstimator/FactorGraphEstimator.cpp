@@ -1429,6 +1429,26 @@ drone_state FactorGraphEstimator::latest_state(bool optimize) {
 }
 
 void FactorGraphEstimator::register_camera(const std::string name,
+                                           const std::vector<double> translation,
+                                           const std::vector<double> rotation,
+                                           const std::vector<double> intrinsics) {
+  std::shared_ptr<gtsam::Point3> translation_gtsam =
+    std::make_shared<gtsam::Point3>(translation[0], translation[1], translation[2]);
+
+  std::shared_ptr<gtsam::Rot3> rotation_gtsam =
+    std::make_shared<gtsam::Rot3>(rotation[0], rotation[1], rotation[2],
+                                    rotation[3], rotation[4], rotation[5],
+                                    rotation[6], rotation[7], rotation[8]);
+  std::shared_ptr<camera_info> cam_info = std::make_shared<camera_info>();
+  cam_info->fx = intrinsics[0];
+  cam_info->fy = intrinsics[1];
+  cam_info->s  = intrinsics[2];
+  cam_info->u0 = intrinsics[3];
+  cam_info->v0 = intrinsics[4];
+  register_camera(name, translation_gtsam, rotation_gtsam, cam_info);
+}
+
+void FactorGraphEstimator::register_camera(const std::string name,
                                            const std::shared_ptr<gtsam::Point3> translation,
                                            const std::shared_ptr<gtsam::Rot3> rotation,
                                            const std::shared_ptr<camera_info> camera_info) {
