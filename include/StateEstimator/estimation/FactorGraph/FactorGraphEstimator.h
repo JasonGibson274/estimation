@@ -86,25 +86,6 @@ struct prior_config {
   double initial_bias_noise = 0.1;
 };
 
-struct estimator_config {
-  bool debug = false;
-  // initial time to start the factor graph at
-  double time = 0.0;
-  isam_parameters isamParameters;
-  imu_factor_params imuFactorParams;
-  pose_factor_params poseFactorParams;
-  camera_factor_params cameraFactorParams;
-  prior_config priorConfig;
-};
-
-/*
-struct detection {
-  std::string id = "";
-  gtsam::Point2 point = gtsam::Point2(-1,-1);
-  int index = 0;
-};
- */
-
 struct optimization_stats {
   double optimizationTime = 0.0;
   double optimizationTimeAvg = 0.0;
