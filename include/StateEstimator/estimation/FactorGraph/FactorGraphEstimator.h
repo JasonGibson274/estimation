@@ -98,11 +98,20 @@ struct optimization_stats {
   double errorAfter = 0.0;
 };
 
+struct detection_header {
+  std::string type = "";
+  std::string id = "";
+  std::string camera = "";
+};
+
+bool operator <(const detection_header& x, const detection_header& y) {
+  return x.camera+"_"+x.type+"_"+x.id <  y.camera+"_"+y.type+"_"+y.id;
+}
+
 struct smart_detection {
   gtsam::Point2 detection;
   int state_index;
-  std::string uuid = "";
-
+  detection_header header;
 };
 
 std::ostream& operator <<(std::ostream& os, const optimization_stats& stats) {
@@ -144,10 +153,6 @@ class FactorGraphEstimator {
    * returns false if another optimization is running and it fails to lock, or if no position updates
    */
   virtual bool run_optimize();
-
-  void group_gates();
-  bool object_in_gate(std::list<alphapilot::Landmark> gate, std::string l_type);
-  bool object_close_to_gate(std::list<alphapilot::Landmark> gate, Landmark l);
 
   virtual alphapilot::drone_state latest_state(bool optimize=false);
 
@@ -199,11 +204,22 @@ class FactorGraphEstimator {
   // even is disabled will create a state in the FG
   bool use_aruco_factors_ = true;
 
+  // how close a timestamp has to be to the state time
+  double pairing_threshold_ = 0.1;
+
   // ========= GRAPH GENERICS ===========
   // current graph that gets updated and cleared after each optimization
   std::shared_ptr<gtsam::NonlinearFactorGraph> current_incremental_graph_;
+
   gtsam::ISAM2 isam_;
+  // isam parameters, set up in yaml config
+  gtsam::ISAM2Params isam_parameters_;
+
+  // maps an index to a time
   std::map<int, double> time_map_;
+
+  // index of the current state
+  int index_ = 0;
 
   // mutex locks
   std::mutex graph_lck_; // controls isam_ and current_incremental_graph_
@@ -218,8 +234,6 @@ class FactorGraphEstimator {
   std::mutex smart_locations_lck_; // lock to control smart detection locations
   std::mutex timing_lck_; // lock to prevent duplicate timing calls
 
-  // index of the current state
-  int index_ = 0;
 
   // Current estimate of the state to be passed into factor graph
   gtsam::Pose3 current_position_guess_;
@@ -232,19 +246,18 @@ class FactorGraphEstimator {
    * L(t) landmark with id t
    * A(201) top left corner of aruco marker 20
    */
-  std::shared_ptr<gtsam::Values> gtsam_current_state_initial_guess_;
+  std::shared_ptr<gtsam::Values> current_state_guess_;
 
-  gtsam::ISAM2Params isam_parameters_;
   // entire history of the state, only enabled in debug mode
   gtsam::Values history_;
 
   // ========== IMU ===========================
   gtsam::PreintegratedImuMeasurements preintegrator_imu_;
-  // the number of IMU messages currently integrated
+  bool use_imu_prop_ = true;
+  bool imu_debug_ = false;
   double last_imu_time_ = -1;
   int bias_index_ = 0;
   int imu_bias_incr_ = 1;
-  bool use_imu_prop_ = true;
   bool invert_x_ = false;
   bool invert_y_ = false;
   bool invert_z_ = false;
@@ -252,7 +265,6 @@ class FactorGraphEstimator {
   const double GRAVITY = 9.81;
   gtsam::noiseModel::Diagonal::shared_ptr bias_noise_;
   gtsam::imuBias::ConstantBias current_bias_guess_;
-  bool imu_debug_ = false;
 
   // ========= PRIOR CONFIG =========
   prior_config prior_config_;
@@ -276,17 +288,18 @@ class FactorGraphEstimator {
   // keeps track of the projection factors for each landmark
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
+  // camera name to camera parameters
   std::map<std::string, gtsam_camera> camera_map;
+  // L index, and actual landmark
   std::map<int, alphapilot::Landmark> landmark_locations_;
   std::vector<alphapilot::Gate> gate_centers_;
   // TODO change to pair of id and type
-  std::map<int, std::string> id_to_landmark_map_;
-  std::map<std::string, int> landmark_to_id_map_;
+  std::map<detection_header, int> landmark_to_id_map_;
   int gate_landmark_index_ = 0;
-  // how close a timestamp has to be to the state time
-  double pairing_threshold_ = 0.1;
   gtsam::noiseModel::Diagonal::shared_ptr landmark_prior_noise_;
+  // will reassign gate ids based on proximity to landmarks
   bool reassign_gate_ids_ = true;
+  // maximum distance between estimated gate position to be classified correctly
   double gate_dist_threshold_ = 10;
 
   // ========== ARUCO FACTOR =============
@@ -300,13 +313,16 @@ class FactorGraphEstimator {
   bool use_aruco_constraints_ = false;
   bool use_range_for_aruco_ = true;
   bool use_projection_debug_ = false;
+  // distance from corner to corner of aruco
   double aruco_length_ = 0.2;
 
   // ========== SMART POSE PROJECTION FACTOR =============
   bool use_smart_pose_projection_factor_ = false;
-  std::map<std::string, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> id_to_smart_landmarks_;
+  // header (id and type) to factor
+  std::map<detection_header, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> id_to_smart_landmarks_;
   std::list<smart_detection> smart_detections_queue_;
   gtsam::SmartProjectionParams projection_params_;
+  // type -> resulting point
   std::map<std::string, std::vector<alphapilot::PointWithCovariance>> smart_locations_;
   gtsam::noiseModel::Diagonal::shared_ptr smart_default_noise_;
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> smart_object_noises_;

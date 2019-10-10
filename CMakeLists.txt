@@ -93,6 +93,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 add_subdirectory(src)
 if (ESTIMATION_BUILD_EXAMPLES_ALWAYS)
+	message("BUILDING EXAMPLES")
 	add_subdirectory(main)
 endif()
 

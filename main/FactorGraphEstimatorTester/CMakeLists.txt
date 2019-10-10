@@ -2,6 +2,7 @@ set(3D_PROJECT ${CMAKE_PROJECT_NAME}_tester)
 
 # Don't build if no GTSAM
 if(NOT GTSAM_FOUND)
+  message("GTSAM NOT FOUND, not building tester")
   return()
 endif()
 

@@ -1,7 +1,6 @@
 factorGraphEstimator:
   debug: true
   useImuProp: true
-  pipeStdout: false
   isamParameters:
     relinearizeThreshold: 0.01
     relinearizeSkip: 1
@@ -13,7 +12,7 @@ factorGraphEstimator:
 
   imuFactorParams:
     # general
-    imuDebug: true
+    imuDebug: false
     useImuFactor: true
     useImuBias: false
     imuBiasIncr: 3
@@ -22,8 +21,8 @@ factorGraphEstimator:
     invertZ: false
 
     # factor specific
-    accelNoiseSigma: 0.25
-    gyroNoiseSigma: 0.25
+    accelNoiseSigma: 1.0
+    gyroNoiseSigma: 0.5
     accelBiasRwSigma: 0.1
     gyroBiasRwSigma: 0.1
     integrationErrorCov: 1e-4
@@ -40,66 +39,87 @@ factorGraphEstimator:
 
   cameraConfig:
     # sets the names of the cameras to be registered
-    cameraNames: [left_right]
+    cameraNames: [left, right]
 
-    left_right:
+    left:
       # fx, fy, s, u0, v0
-      K: [602.8772177219314, 602.8880443100697, 0, 628.4051298263508, 373.66555567947336]
+      K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
 
-      # translation x, y, z
-      translation: [0.17, 0.03, 0.06]
-      # rotation matrix
-      #rotation: [0.48380819, -0.87511682, -0.01000913, 0.22325713, 0.13446987, -0.96543985, 0.84621858, 0.46485309, 0.26043369]
-      rotation: [ 0.48380819, 0.22325713, 0.84621858, -0.87511682, 0.13446987, 0.46485309, -0.01000913, -0.96543985, 0.26043369]
+      # x, y, z
+      translation: [0.0, 0.0, 0.0]
+      # qw, qx, qy, qz
+      rotation: [-0.5, 0.5, -0.5, 0.5]
+
+    right:
+      # fx, fy, s, u0, v0
+      K: [548.4088134765625, 548.4088134765625, 0.0, 512.0, 384.0]
+
+      # x, y, z
+      translation: [0.2, 0.0, 0.0]
+      # qw, qx, qy, qz
+      rotation: [-0.5, 0.5, -0.5, 0.5]
 
   arucoFactorParams:
-    useArucoFactor: true
-    useArucoConstraints: true
-    useArucoRange: true
+    useArucoFactor: false
+    useArucoConstraints: false
+    useArucoRange: false
     useProjectionDebug: false
 
-    # m from corner to corner of aruco
-    arucoLength: 0.2
+    arucoRangeNoise: 10
 
-    # what cameras we will wait for detections from before creating a state
-    enabledCameras: [left_right]
+    # m from corner to corner of aruco
+    arucoLength: 0.1
 
     #rad, rad, rad, m, m, m
     arucoNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
     # error in px
-    projectionPixelNoise: 50
+    projectionPixelNoise: 20
 
     # m, m, m
     arucoPriorNoise: [4.0, 4.0, 4.0]
 
   projectionFactorParams:
-    useProjectionFactor: true
-    defaultPixelNoise: 10.0
+    useProjectionFactor: false
+    reassignGateIds: true
+    defaultPixelNoise: 60.0
     pairingThreshold: 0.02 # allowed time stamp difference
+    gateDistThreshold: 10.0 #maximum distance between two gates allowed to reassign ids
 
-    # list of valid objects
+    # list of valid types of objects
     objects: [1, 2, 3, 4]
     objectList:
-      1_noise: 10 # top left corner
-      2_noise: 10 # top right corner
-      3_noise: 10 # bottom right corner
-      4_noise: 10 # bottom left corner
+      1_noise: 30 # top left corner
+      2_noise: 30 # top right corner
+      3_noise: 30 # bottom right corner
+      4_noise: 30 # bottom left corner
 
     # list of known objects to track, no _ allowed
     trackedObjects: []
-    objectPriorNoise: [10.0, 10.0, 10.0]
-    # TODO Get the actual prediction
+    objectPriorNoise: [1.0, 1.0, 0.1]
+
     # Gate#_type#
-    objectPriors:
-      1_1: [10, 0, 0]
+    #objectPriors:
+    #  1_1: [10, 0, 0]
 
   priorConfig:
     # x, y, z, qw, qx, qy, qz, x_dot, y_dot, z_dot
     initial_state: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     initial_vel_noise: 0.01
     # rad, rad, rad, m, m, m
-    initial_pose_noise: [0.05, 0.05, 0.05, 0.15, 0.15, 0.15]
+    initial_pose_noise: [0.5, 0.5, 0.1, 0.15, 0.15, 0.15]
     initial_bias_noise: 0.1
 
+  smartPoseProjectionFactors:
+    useSmartPoseProjectionFactor: false
+    landmarkDistanceThreshold: -1
+    useDegenerateSolutions: false
+    dynamicOutlierRejectionThreshold: -1
+
+    defaultPixelNoise: 60.0
+
+    # list of valid types of objects
+    objects: [1]
+    objectList:
+      1_noise: 30
 
