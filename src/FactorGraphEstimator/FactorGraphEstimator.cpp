@@ -1006,6 +1006,8 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
     return;
   }
 
+  timing_callback(msg->time);
+
   if (camera_map.find(msg->camera) == camera_map.end()) {
     std::cout << "WARNING using invalid camera name " << msg->camera << " make sure to register a camera first"
               << std::endl;
@@ -1152,6 +1154,8 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
   if (!use_camera_factors_) {
     return;
   }
+
+  timing_callback(landmark_data->time);
 
   // if there is no position updates this is unconstrained
   if (camera_map.find(landmark_data->camera_name) == camera_map.end()) {
@@ -1402,7 +1406,7 @@ void FactorGraphEstimator::register_camera(const std::string name,
   cam.transform = Pose3(*rotation, *translation);
 
 
-  std::cout << "Registered camera:" << "\n";
+  std::cout << "Registered camera: " << name << "\n";
   cam.K->print();
   std::cout << "\ntransform = " << cam.transform << std::endl;
   camera_map.insert(std::pair<std::string, gtsam_camera>(name, cam));
@@ -1526,6 +1530,8 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
   if (!use_smart_pose_projection_factor_) {
     return;
   }
+
+  timing_callback(detections->time);
 
   // if there is no position updates this is unconstrained
   if (camera_map.find(detections->camera) == camera_map.end()) {
