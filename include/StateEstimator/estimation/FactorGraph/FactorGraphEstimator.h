@@ -37,48 +37,6 @@ struct gtsam_camera {
   boost::shared_ptr<gtsam::Cal3_S2> K;
 };
 
-struct isam_parameters {
-  // https://borg.cc.gatech.edu/sites/edu.borg/html/a00135.html#af5da340f5774c8ccbbdecfc0a5299888
-  double relinearizeThreshold = 0.01;
-  int relinearizeSkip = 1;
-  bool enablePartialRelinearizationCheck = false;
-  bool chacheLinearedFactors = false;
-  bool enableDetailedResults = true;
-  bool findUnusedFactorSlots = false;
-  double gaussianWildfireThreshold = 0.001;
-};
-
-struct imu_factor_params {
-  // factor specific
-  double accelNoiseSigma = 2.0;
-  double gyroNoiseSigma = 0.1;
-  double accelBiasRwSigma = 0.1;
-  double gyroBiasRwSigma = 0.1;
-  double integrationErrorCov = 1e-4;
-  double biasAccOmegaInt = 0.1;
-
-  // general
-  bool useImuFactor = true;
-  int imuBiasIncr = 5;
-  bool invertX = false;
-  bool invertY = false;
-  bool invertZ = false;
-
-  // bias noise
-  std::vector<double> biasNoise = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
-};
-
-struct pose_factor_params {
-  bool usePoseFactor = true;
-  std::vector<double> poseNoise = {0.25, 0.25, 0.25, 0.25, 0.25, 0.25};
-  std::vector<double> poseVelNoise = {0.3, 0.3, 0.3};
-};
-
-struct camera_factor_params {
-  bool useCameraFactor = true;
-  double pixelNoise = 10.0;
-};
-
 struct prior_config {
   drone_state initial_state;
   double initial_vel_noise = 0.1;

@@ -445,7 +445,7 @@ bool FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detec
   std::map<std::string, std::string> detected_to_actual;
   // iterate while both queue and detection have elements, if we go above dist threshold stop
   if(debug_ && !pq.empty()) {
-    std::cout << "top value" << std::get<2>(pq.top()) << std::endl;
+    std::cout << "top value " << std::get<2>(pq.top()) << std::endl;
   }
   while(!pq.empty() && detected_ids.size() < detection_msg->landmarks.size() && std::get<2>(pq.top()) < gate_dist_threshold_) {
     auto top = pq.top();
@@ -1010,7 +1010,7 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
   timing_callback(msg->time);
 
   if (camera_map.find(msg->camera) == camera_map.end()) {
-    std::cout << "WARNING using invalid camera name " << msg->camera << " make sure to register a camera first"
+    std::cout << "WARNING aruco using invalid camera name " << msg->camera << " make sure to register a camera first"
               << std::endl;
     return;
   }
@@ -1160,8 +1160,9 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
 
   // if there is no position updates this is unconstrained
   if (camera_map.find(landmark_data->camera_name) == camera_map.end()) {
-    std::cout << "WARNING using invalid camera name " << landmark_data->camera_name << " make sure to register a camera first"
+    std::cout << "WARNING callback_cm using invalid camera name " << landmark_data->camera_name << " make sure to register a camera first"
               << std::endl;
+    return;
   }
 
   int image_index = find_camera_index(landmark_data->time);
@@ -1177,15 +1178,15 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
     }
   }
 
+  // New Landmark - Add a new Factor
+  gtsam_camera camera = camera_map[landmark_data->camera_name];
+
   for (const auto &seen_gate : landmark_data->landmarks) {
     for(const auto &subfeature : seen_gate.subfeatures) {
       detection_header header;
       header.id = seen_gate.gate;
       header.type = subfeature.type;
       std::string object_type = subfeature.type;
-
-      // New Landmark - Add a new Factor
-      gtsam_camera camera = camera_map[landmark_data->camera_name];
 
       Point2 detection_coords(subfeature.x, subfeature.y);
 
@@ -1536,7 +1537,7 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
 
   // if there is no position updates this is unconstrained
   if (camera_map.find(detections->camera) == camera_map.end()) {
-    std::cout << "WARNING using invalid camera name " << detections->camera << " make sure to register a camera first"
+    std::cout << "WARNING smart using invalid camera name " << detections->camera << " make sure to register a camera first"
               << std::endl;
     return;
   }
