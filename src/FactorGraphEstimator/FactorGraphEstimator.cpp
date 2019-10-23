@@ -65,6 +65,9 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     isam_parameters_.cacheLinearizedFactors = alphapilot::get<bool>("cacheLinearizedFactors", isam_config, false);
     isam_parameters_.enableDetailedResults = alphapilot::get<bool>("enableDetailedResults", isam_config, true);
     isam_parameters_.findUnusedFactorSlots = alphapilot::get<bool>("findUnusedFactorSlots", isam_config, false);
+    if(debug_) {
+      isam_parameters_.evaluateNonlinearError = true;
+    }
     gtsam::ISAM2GaussNewtonParams optimizationParams;
     optimizationParams.wildfireThreshold = alphapilot::get<double>("gaussianWildfireThreshold", isam_config, 0.001);
     isam_parameters_.optimizationParams = optimizationParams;
