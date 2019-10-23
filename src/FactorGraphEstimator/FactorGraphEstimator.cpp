@@ -283,6 +283,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
   if(debug_) {
     std::cout << "\nFinished Init\n"
             << "Using IMU Factor: " << (use_imu_factors_ ? "true" : "false") << "\n"
+            << "Using IMU Bias Factor: " << (use_imu_bias_ ? "true" : "false") << "\n"
             << "Using pose Factor: " << (use_pose_factors_ ? "true" : "false") << "\n"
             << "Using projection Factor: " << (use_camera_factors_ ? "true" : "false") << "\n"
             << "Using aruco Factor: " << (use_aruco_factors_ ? "true" : "false") << "\n"
@@ -292,7 +293,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
   }
 
   // add the priors on state
-  //add_priors(prior_config_.initial_state);
+  add_priors(prior_config_.initial_state);
 }
 
 
