@@ -62,15 +62,42 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     isam_parameters_.relinearizeSkip = alphapilot::get<int>("relinearizeSkip", isam_config, 1);
     isam_parameters_.enablePartialRelinearizationCheck = alphapilot::get<bool>("enablePartialRelinearizationCheck",
                                                                                isam_config, false);
+    isam_parameters_.enableRelinearization = alphapilot::get<bool>("enableRelinearization", isam_config, true);
     isam_parameters_.cacheLinearizedFactors = alphapilot::get<bool>("cacheLinearizedFactors", isam_config, false);
-    isam_parameters_.enableDetailedResults = alphapilot::get<bool>("enableDetailedResults", isam_config, true);
     isam_parameters_.findUnusedFactorSlots = alphapilot::get<bool>("findUnusedFactorSlots", isam_config, false);
     if(debug_) {
+      isam_parameters_.enableDetailedResults = true;
       isam_parameters_.evaluateNonlinearError = true;
     }
-    gtsam::ISAM2GaussNewtonParams optimizationParams;
-    optimizationParams.wildfireThreshold = alphapilot::get<double>("gaussianWildfireThreshold", isam_config, 0.001);
-    isam_parameters_.optimizationParams = optimizationParams;
+    std::string optimzation_method = alphapilot::get<std::string>("optimizer", isam_config, std::string("GN"));
+    if(optimzation_method == "DL") {
+      gtsam::ISAM2DoglegParams optimizationParams;
+      optimizationParams.verbose = alphapilot::get<bool>("verbose", isam_config, false);
+      optimizationParams.wildfireThreshold = alphapilot::get<double>("wildfireThreshold", isam_config, 1e-5);
+      optimizationParams.initialDelta = alphapilot::get<double>("initialDelta", isam_config, 1.0);
+      std::string adaptationMode = alphapilot::get<std::string>("trustRegionAdaptionMode", isam_config, std::string("oneStep"));
+      if(adaptationMode == "searchEachIter") {
+        optimizationParams.adaptationMode = gtsam::DoglegOptimizerImpl::SEARCH_EACH_ITERATION;
+      } else if(adaptationMode == "searchReduce") {
+        optimizationParams.adaptationMode = gtsam::DoglegOptimizerImpl::SEARCH_REDUCE_ONLY;
+      } else {
+        if(adaptationMode == "oneStep") {
+          std::cout << "WARNING: adaptionMode in invalid " << adaptationMode << " is not in set {searchEachIter, searchReduce, oneStep}\n" <<
+                                                                       " defaulting to oneStep" << std::endl;
+        }
+        optimizationParams.adaptationMode = gtsam::DoglegOptimizerImpl::ONE_STEP_PER_ITERATION;
+      }
+      isam_parameters_.optimizationParams = optimizationParams;
+
+    } else {
+      if (optimzation_method != "GN") {
+        std::cout << "WARNING: optimization method " << optimzation_method << " not valid of set {GN, DL}\n"
+                                                                              "using GaussNewton" << std::endl;
+      }
+      gtsam::ISAM2GaussNewtonParams optimizationParams;
+      optimizationParams.wildfireThreshold = alphapilot::get<double>("gaussianWildfireThreshold", isam_config, 0.001);
+      isam_parameters_.optimizationParams = optimizationParams;
+    }
     isam_parameters_.print();
   }
   isam_ = ISAM2(isam_parameters_);
