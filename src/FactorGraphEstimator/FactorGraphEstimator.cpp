@@ -271,6 +271,8 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     projection_params_.setDynamicOutlierRejectionThreshold(alphapilot::get<double>(
         "dynamicOutlierRejectionThreshold", smart_pose_config, 10.0));
 
+    projection_params_.throwCheirality = false;
+
 
     double default_noise = alphapilot::get<double>("defaultPixelNoise", smart_pose_config, 10.0);
     smart_default_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
@@ -550,7 +552,7 @@ bool FactorGraphEstimator::run_optimize() {
     if(debug_) {
       std::cout << "adding detection on camera: " << detection.header.camera << " with id: "
               << detection.header.id << " and type: " << detection.header.type
-              << "\nat index " << detection.state_index << " of " << detection.detection << std::endl;
+              << "\nat state index " << detection.state_index << " of " << detection.detection << std::endl;
     }
     // TODO should also add camera key detection came from
     id_to_smart_landmarks_[detection.header]->add(detection.detection, symbol_shorthand::X(detection.state_index));
@@ -563,8 +565,10 @@ bool FactorGraphEstimator::run_optimize() {
     print_values(guesses_copy);
     graph_copy->printErrors(history_);
     for(auto it = id_to_smart_landmarks_.begin(); it != id_to_smart_landmarks_.end(); it++) {
-      it->second->print();
-      std::cout << "error: " << it->second->error(history_) << std::endl;
+      if(it->second->error(history_) > 0) {
+        it->second->print();
+        std::cout << "error: " << it->second->error(history_) << std::endl;
+      }
     }
   }
 
@@ -1153,8 +1157,6 @@ void FactorGraphEstimator::add_projection_prior(std::shared_ptr<Landmark> msg) {
  * @param map<landmark_id, uv_coords> landmark_data
  */
 void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> landmark_data) {
-  std::cout << __func__ << std::endl;
-
   if (!use_camera_factors_) {
     return;
   }
@@ -1551,6 +1553,9 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
     return;
   }
 
+  // New Landmark - Add a new Factor
+  gtsam_camera camera = camera_map[detections->camera];
+
   for(CameraDetection detection : detections->detections) {
     detection_header header;
     header.type = detection.type;
@@ -1559,14 +1564,10 @@ void FactorGraphEstimator::smart_projection_callback(const std::shared_ptr<alpha
 
     auto landmark_factor_it = id_to_smart_landmarks_.find(header);
     if(landmark_factor_it == id_to_smart_landmarks_.end()) {
-      // New Landmark - Add a new Factor
-      gtsam_camera camera = camera_map[detections->camera];
-
       SmartProjectionPoseFactor<Cal3_S2>::shared_ptr smartFactor;
       // TODO use the initial distance metric to set the estimate
 
-      gtsam::SmartProjectionParams projection_params;
-      if (object_noises_.find(detection.type) != object_noises_.end()) {
+      if (smart_object_noises_.find(detection.type) != smart_object_noises_.end()) {
         smartFactor = boost::make_shared<SmartProjectionPoseFactor<Cal3_S2>>(
             smart_object_noises_[detection.type], camera.K, camera.transform, projection_params_);
       } else {
