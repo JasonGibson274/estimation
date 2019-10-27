@@ -189,6 +189,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
 
     use_aruco_factors_ = alphapilot::get<bool>("useArucoFactor", aruco_config, true);
     use_aruco_constraints_ = alphapilot::get<bool>("useArucoConstraints", aruco_config, true);
+    use_aruco_prior_ = alphapilot::get<bool>("useArucoPrior", aruco_config, true);
     use_range_for_aruco_ = alphapilot::get<bool>("useArucoRange", aruco_config, true);
     use_projection_debug_ = alphapilot::get<bool>("useProjectionDebug", aruco_config, false);
     aruco_length_ = alphapilot::get<double>("arucoLength", aruco_config, 0.2);
@@ -1091,9 +1092,13 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
         Point3 prior = generate_aruco_priors(position_copy, detection.pose, i, size);
 
         current_state_guess_->insert(symbol_shorthand::A(id_base + i), prior);
-        current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
-                                                            prior,
-                                                            aruco_pose_prior_noise_));
+
+        if(use_aruco_prior_) {
+          current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
+                                                              prior,
+                                                              aruco_pose_prior_noise_));
+        }
+
       }
       // add constraints to the graph
       if(use_aruco_constraints_) {

@@ -270,6 +270,7 @@ class FactorGraphEstimator {
   std::unordered_set<int> aruco_indexes_;
   bool use_aruco_constraints_ = false;
   bool use_range_for_aruco_ = true;
+  bool use_aruco_prior_ = true;
   bool use_projection_debug_ = false;
   // distance from corner to corner of aruco
   double aruco_length_ = 0.2;
