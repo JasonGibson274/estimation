@@ -450,66 +450,16 @@ bool FactorGraphEstimator::assign_gate_ids(std::shared_ptr<GateDetections> detec
   }
   //std::cout << "position copy: " << position_copy << std::endl;
   graph_lck_.unlock();
-
-  // detected id, actual gate id, distance
-  auto comp = [](std::tuple<std::string, std::string, double> a, std::tuple<std::string, std::string, double> b ) {
-    return std::get<2>(a) > std::get<2>(b);
-  };
-  std::priority_queue<std::tuple<std::string, std::string, double>,
-          std::vector<std::tuple<std::string, std::string, double>>, decltype(comp)> pq(comp);
-  for(GateDetection detection : detection_msg->landmarks) {
-    // iterate through the gates to see which one is closest to the pose
-    for(Gate gate : gate_centers_) {
-      Point3 det_pose = position_copy.transformFrom(Point3(detection.pose.position.x, detection.pose.position.y,
-              detection.pose.position.z));
-      //std::cout << "making distance for detected: " << detection.gate << " and landmark " << gate.id << std::endl;
-      //std::cout << "detection: " << detection.pose.position << std::endl;
-      Point3 gate_pose(gate.position.position.x, gate.position.position.y, gate.position.position.z);
-      //std::cout << "det pose: " <<  det_pose.transpose() << std::endl;
-      //std::cout << "gate pose: " <<  gate_pose.transpose() << std::endl;
-      double dist =  gate_pose.dist(det_pose);
-      //std::cout << "dist: " << dist << "\n" << std::endl;
-      pq.push(std::tie(detection.gate, gate.id, dist));
-    }
-  }
-  // iterate through and assign lowest distance matching
-  std::unordered_set<std::string> detected_ids;
-  std::unordered_set<std::string> actual_ids;
-  std::map<std::string, std::string> detected_to_actual;
-  // iterate while both queue and detection have elements, if we go above dist threshold stop
-  if(debug_ && !pq.empty()) {
-    std::cout << "top value " << std::get<2>(pq.top()) << std::endl;
-  }
-  while(!pq.empty() && detected_ids.size() < detection_msg->landmarks.size() && std::get<2>(pq.top()) < gate_dist_threshold_) {
-    auto top = pq.top();
-    std::string detected = std::get<0>(top);
-    std::string actual = std::get<1>(top);
-    double distance = std::get<2>(top);
-    if(debug_) {
-      std::cout << "comparing detected: " << detected << " actual: " << actual << " dist: " << distance << std::endl;
-    }
-    if(detected_ids.count(detected) == 0 && actual_ids.count(actual) == 0) {
-      std::cout << detected << "->" << actual << std::endl;
-      detected_ids.insert(detected);
-      actual_ids.insert(actual);
-      detected_to_actual[detected] = actual;
-    }
-    pq.pop();
-  }
-  // set the ids to be what was calculated earlier
-  for(auto it = detection_msg->landmarks.begin(); it != detection_msg->landmarks.end(); it++) {
-    if(debug_) {
-      std::cout << "mapping gate id " << it->gate << " to " << detected_to_actual[it->gate] << std::endl;
-    }
-    // if we have a pairing use it, otherwise ignore the gate
-    if(detected_to_actual.count(it->gate) > 0) {
-      it->gate = detected_to_actual[it->gate];
-    } else {
-      it->gate = "-1";
-    }
-  }
-  // TODO if an id is not set remove it from the list
-  return !detected_to_actual.empty();
+  drone_state odom = drone_state();
+  odom.x = position_copy.x();
+  odom.y = position_copy.y();
+  odom.z = position_copy.z();
+  gtsam::Quaternion rotation = position_copy.rotation().toQuaternion();
+  odom.qw = rotation.w();
+  odom.qx = rotation.x();
+  odom.qy = rotation.y();
+  odom.qz = rotation.z();
+  return reassign_gate_ids(detection_msg, odom, gate_centers_, gate_dist_threshold_);
 }
 
 void FactorGraphEstimator::print_values(std::shared_ptr<gtsam::Values> values) {
@@ -589,6 +539,7 @@ bool FactorGraphEstimator::run_optimize() {
   smart_detections_lck_.unlock();
 
   if (debug_) {
+    std::cout << "======= BEFORE error ======\n";
     history_.insert(*guesses_copy);
     print_values(guesses_copy);
     graph_copy->printErrors(history_);
@@ -606,9 +557,7 @@ bool FactorGraphEstimator::run_optimize() {
 
   // run update and run optimization
   ISAM2Result results = isam_.update(*graph_copy, *guesses_copy);
-  std::cout << "finished update" << std::endl;
   Values optimized_values = isam_.calculateEstimate();
-  std::cout << "finished optimzation" << std::endl;
   // print out optimizations statistics
   optimization_stats_.variablesReeliminated = results.variablesReeliminated;
   optimization_stats_.variablesRelinearized = results.variablesRelinearized;
@@ -621,6 +570,12 @@ bool FactorGraphEstimator::run_optimize() {
     optimization_stats_.errorAfter = *results.errorAfter;
   } else {
     optimization_stats_.errorAfter = -1;
+  }
+
+  if(debug_) {
+    std::cout << "======= AFTER error ======\n";
+    history_.update(optimized_values);
+    graph_copy->printErrors(history_);
   }
 
   // get timing statistics
@@ -1239,7 +1194,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
       // if the id is not valid
       if(seen_gate.gate == "-1") {
         std::cout << "\nWARNING: invalid gate id assigned by reassign gate ids, ignoring and continuing" << std::endl;
-        continue;
+        break;
       }
       GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
       if (object_noises_.find(object_type) != object_noises_.end()) {
@@ -1542,14 +1497,14 @@ void FactorGraphEstimator::calculate_gate_centers() {
   for(auto & it : map) {
     Gate gate;
     gate.id = it.first;
-    std::cout << "accum for gate: " << it.second.transpose() << std::endl;
+    //std::cout << "accum for gate: " << it.second.transpose() << std::endl;
     // find the average position
     it.second /= it.second(3);
     // set the postion of each gate
     gate.position.position.x = it.second(0);
     gate.position.position.y = it.second(1);
     gate.position.position.z = it.second(2);
-    std::cout << "Gate: " << gate.id << " center: " << it.second.transpose() << std::endl;
+    //std::cout << "Gate: " << gate.id << " center: " << it.second.transpose() << std::endl;
     gate_centers_.push_back(gate);
   }
 }

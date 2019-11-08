@@ -16,6 +16,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
 
 #include <alphapilot_common/Utils.h>
+#include <alphapilot_common/GateConstraints.h>
 
 #include <map>
 #include <mutex>
@@ -25,9 +26,6 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/sam/RangeFactor.h>
 
 #include <yaml-cpp/yaml.h>
-#include <unordered_set>
-#include <tuple>
-#include <queue>
 
 // TODO make callbacks pass by const reference to shared pointer
 namespace alphapilot {
