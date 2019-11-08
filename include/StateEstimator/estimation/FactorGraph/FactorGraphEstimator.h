@@ -201,6 +201,11 @@ class FactorGraphEstimator {
    * V(t) velocity at time t
    * L(t) landmark with id t
    * A(201) top left corner of aruco marker 20
+      * 1 == top left
+      * 2 == top right
+      * 3 == bottom right
+      * 4 == bottom left
+   * G(t) center of gate with id t
    */
   std::shared_ptr<gtsam::Values> current_state_guess_;
 
@@ -244,6 +249,9 @@ class FactorGraphEstimator {
   // keeps track of the projection factors for each landmark
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
+  gtsam::noiseModel::Constrained::shared_ptr projection_constraint_noise_;
+  // will turn off projection constraints
+  bool use_projection_constraints_ = false;
   // camera name to camera parameters
   std::map<std::string, gtsam_camera> camera_map;
   // L index, and actual landmark

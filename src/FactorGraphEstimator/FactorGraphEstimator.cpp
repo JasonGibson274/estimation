@@ -147,9 +147,11 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     double default_noise = alphapilot::get<double>("defaultPixelNoise", camera_config, 10.0);
     default_camera_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
     reassign_gate_ids_ = alphapilot::get<bool>("reassignGateIds", camera_config, true);
-
+    use_projection_constraints_ = alphapilot::get<bool>("useProjectionConstraints", camera_config, false);
 
     gate_dist_threshold_ = alphapilot::get<double>("gateDistThreshold", camera_config, 10.0);
+
+    projection_constraint_noise_ = gtsam::noiseModel::Constrained::All(3);
 
     std::vector<std::string> object_names = alphapilot::get<std::vector<std::string>>("objects", camera_config, {});
     for (auto &object_name : object_names) {
@@ -1130,9 +1132,39 @@ void FactorGraphEstimator::add_projection_prior(std::shared_ptr<Landmark> msg) {
   current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::L(gate_landmark_index_),
                                                 prior,
                                                 landmark_prior_noise_));
+  int my_index = gate_landmark_index_;
   // add initial guess as well
-  current_state_guess_->insert(symbol_shorthand::L(gate_landmark_index_), prior);
+  current_state_guess_->insert(symbol_shorthand::L(my_index), prior);
   ++gate_landmark_index_;
+
+  // find what other landmarks are associated with this one and relate them with between factors
+  if(use_projection_constraints_) {
+    for(auto it = landmark_to_id_map_.begin(); it != landmark_to_id_map_.end(); it++) {
+      if(it->first.id == header.id && it->first.type != header.type) {
+        std::lock_guard<std::mutex> graph_lck(graph_lck_);
+        int other_index = it->second;
+        Point3 other_position;
+        if(current_state_guess_->exists(symbol_shorthand::L(other_index))) {
+          other_position = current_state_guess_->at<Point3>(symbol_shorthand::L(other_index));
+        } else if(history_.exists(symbol_shorthand::L(other_index))) {
+          other_position = history_.at<Point3>(symbol_shorthand::L(other_index));
+        } else {
+          std::cout << "WARNING: cannot find match for landmark" << std::endl;
+          continue;
+        }
+
+        Point3 diff = other_position - prior;
+        if(debug_) {
+          std::cout << "adding between factor " << my_index << " -> " << other_index << "\n";
+          std::cout << diff.transpose() << std::endl;
+        }
+        current_incremental_graph_->emplace_shared<BetweenFactor<Point3>>(symbol_shorthand::L(my_index),
+                                                                          symbol_shorthand::L(other_index),
+                                                                          diff,
+                                                                          projection_constraint_noise_);
+      }
+    }
+  }
 }
 
 /**
@@ -1174,6 +1206,11 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
   gtsam_camera camera = camera_map[landmark_data->camera_name];
 
   for (const auto &seen_gate : landmark_data->landmarks) {
+    // if the id is not valid
+    if(seen_gate.gate == "-1") {
+      std::cout << "\nWARNING: invalid gate id assigned by reassign gate ids, ignoring and continuing" << std::endl;
+      continue;
+    }
     for(const auto &subfeature : seen_gate.subfeatures) {
       detection_header header;
       header.id = seen_gate.gate;
@@ -1190,11 +1227,6 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
         std::cout << "\n\nWARNING: invalid gate: " << seen_gate.gate << "\n for subfeature: " << subfeature
                   << "\nmust register landmark first\n\n" << std::endl;
         continue;
-      }
-      // if the id is not valid
-      if(seen_gate.gate == "-1") {
-        std::cout << "\nWARNING: invalid gate id assigned by reassign gate ids, ignoring and continuing" << std::endl;
-        break;
       }
       GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
       if (object_noises_.find(object_type) != object_noises_.end()) {
