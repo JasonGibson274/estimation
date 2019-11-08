@@ -148,10 +148,15 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     default_camera_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
     reassign_gate_ids_ = alphapilot::get<bool>("reassignGateIds", camera_config, true);
     use_projection_constraints_ = alphapilot::get<bool>("useProjectionConstraints", camera_config, false);
+    projection_constraint_noise_val_ = alphapilot::get<bool>("projectionConstraintNoise", camera_config, 0.1);
+    use_gate_center_ = alphapilot::get<bool>("useGateCenter", camera_config, false);
+    double gate_range_noise = alphapilot::get<double>("gateRangeNoise", camera_config, 1.0);
+    gate_range_noise_ = gtsam::noiseModel::Isotropic::Sigma(1, gate_range_noise);
 
     gate_dist_threshold_ = alphapilot::get<double>("gateDistThreshold", camera_config, 10.0);
 
     projection_constraint_noise_ = gtsam::noiseModel::Constrained::All(3);
+    projection_landmark_noise_ = noiseModel::Isotropic::Sigma(3, projection_constraint_noise_val_);
 
     std::vector<std::string> object_names = alphapilot::get<std::vector<std::string>>("objects", camera_config, {});
     for (auto &object_name : object_names) {
@@ -618,8 +623,18 @@ bool FactorGraphEstimator::run_optimize() {
   }
   landmark_lck_guard.unlock();
 
-  // converts landmarks into gate centers
-  calculate_gate_centers();
+  if(use_gate_center_) {
+    // here the gate centers are constrained to landmarks and explicitely optimized for
+    for(auto it = gate_centers_.begin(); it != gate_centers_.end(); it++) {
+      Point3 center = optimized_values.at<Point3>(symbol_shorthand::G(stoi(it->id)));
+      it->position.position.x = center.x();
+      it->position.position.y = center.y();
+      it->position.position.z = center.z();
+    }
+  } else {
+    // converts landmarks into gate centers
+    calculate_gate_centers();
+  }
 
   // calculate the centers of aruco
   aruco_locations_lck_.lock();
@@ -1211,6 +1226,16 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
       std::cout << "\nWARNING: invalid gate id assigned by reassign gate ids, ignoring and continuing" << std::endl;
       continue;
     }
+    // add range factor
+    if(use_gate_center_) {
+      std::lock_guard<std::mutex> graph_lck(graph_lck_);
+      double dist = alphapilot::dist(seen_gate.pose.position, alphapilot::Point());
+      current_incremental_graph_->emplace_shared<RangeFactor<Pose3, Point3>>(
+              symbol_shorthand::X(image_index),
+              symbol_shorthand::G(stoi(seen_gate.gate)),
+              dist,
+              gate_range_noise_);
+    }
     for(const auto &subfeature : seen_gate.subfeatures) {
       detection_header header;
       header.id = seen_gate.gate;
@@ -1507,6 +1532,7 @@ std::vector<alphapilot::Gate> FactorGraphEstimator::get_gates() {
 
 // also under landmark_lck
 void FactorGraphEstimator::calculate_gate_centers() {
+  std::cout << "======================calcualte gate cneter" << std::endl;
   // TODO there could be an issue with alignment here
   lock_guard<mutex> gate_lck(gate_lck_);
   lock_guard<mutex> landmark_lck(landmark_lck_);
@@ -1538,6 +1564,35 @@ void FactorGraphEstimator::calculate_gate_centers() {
     gate.position.position.z = it.second(2);
     //std::cout << "Gate: " << gate.id << " center: " << it.second.transpose() << std::endl;
     gate_centers_.push_back(gate);
+    // if using gate centers calculate all constraints between gate and subfeatures
+    std::lock_guard<std::mutex> graph_lck(graph_lck_);
+    if(use_gate_center_) {
+      Point3 gate_pose = Point3(gate.position.position.x, gate.position.position.y, gate.position.position.z);
+      int center_index = stoi(gate.id);
+      current_state_guess_->insert(symbol_shorthand::G(center_index), gate_pose);
+      for(auto & landmark_location : landmark_locations_) {
+        std::string gate_id = landmark_location.second.id;
+        if(gate_id == gate.id) {
+          Point3 landmark_pose = Point3(landmark_location.second.position.x, landmark_location.second.position.y,
+                  landmark_location.second.position.z);
+          Point3 diff = landmark_pose - gate_pose;
+          int other_index = landmark_location.first;
+          // TODO handle if not a int
+          gtsam::noiseModel::Diagonal::shared_ptr temp_noise = gtsam::noiseModel::Isotropic::Sigma(3, 0.1);
+          if(projection_constraint_noise_ == 0) {
+            current_incremental_graph_->emplace_shared<BetweenFactor<Point3>>(symbol_shorthand::G(center_index),
+                                                                              symbol_shorthand::L(other_index),
+                                                                              diff,
+                                                                              projection_constraint_noise_);
+          } else {
+            current_incremental_graph_->emplace_shared<BetweenFactor<Point3>>(symbol_shorthand::G(center_index),
+                                                                              symbol_shorthand::L(other_index),
+                                                                              diff,
+                                                                              projection_landmark_noise_);
+          }
+        }
+      }
+    }
   }
 }
 

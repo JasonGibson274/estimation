@@ -125,6 +125,8 @@ class FactorGraphEstimator {
                        const std::vector<double> rotation,
                        const std::vector<double> intrinsics);
 
+  void calculate_gate_centers();
+
  private:
   virtual void register_camera(const std::string name,
                                const std::shared_ptr<gtsam::Point3> translation,
@@ -136,7 +138,6 @@ class FactorGraphEstimator {
   void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
   int find_camera_index(double time);
   void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
-  void calculate_gate_centers();
   bool assign_gate_ids(std::shared_ptr<GateDetections> detection_msg, int image_index);
   void print_values(std::shared_ptr<gtsam::Values> values);
   gtsam::Point3 generate_aruco_priors(const gtsam::Pose3& pos_copy, const alphapilot::Pose& pose, int index, double size);
@@ -249,7 +250,13 @@ class FactorGraphEstimator {
   // keeps track of the projection factors for each landmark
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> object_noises_;
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
+  gtsam::noiseModel::Diagonal::shared_ptr projection_landmark_noise_;
   gtsam::noiseModel::Constrained::shared_ptr projection_constraint_noise_;
+  std::unordered_set<std::string> gate_center_inited_;
+  double projection_constraint_noise_val_;
+  // will estimate gate center in graph
+  bool use_gate_center_ = false;
+  gtsam::noiseModel::Diagonal::shared_ptr gate_range_noise_;
   // will turn off projection constraints
   bool use_projection_constraints_ = false;
   // camera name to camera parameters
