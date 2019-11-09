@@ -127,6 +127,8 @@ class FactorGraphEstimator {
 
   void calculate_gate_centers();
 
+  std::vector<drone_state> get_state_history();
+
  private:
   virtual void register_camera(const std::string name,
                                const std::shared_ptr<gtsam::Point3> translation,

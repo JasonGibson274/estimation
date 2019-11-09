@@ -559,12 +559,14 @@ bool FactorGraphEstimator::run_optimize() {
   }
 
   auto start = std::chrono::steady_clock::now();
-  //history_.print();
-  //isam_.getFactorsUnsafe().printErrors(history_);
 
   // run update and run optimization
   ISAM2Result results = isam_.update(*graph_copy, *guesses_copy);
+  auto temp_start = std::chrono::steady_clock::now();
   Values optimized_values = isam_.calculateEstimate();
+  auto temp_end = std::chrono::steady_clock::now();
+  std::chrono::duration<double> temp_diff = temp_end - temp_start;
+  std::cout << "time to calculate estimate" << temp_diff.count() << std::endl;
   // print out optimizations statistics
   optimization_stats_.variablesReeliminated = results.variablesReeliminated;
   optimization_stats_.variablesRelinearized = results.variablesRelinearized;
@@ -581,6 +583,7 @@ bool FactorGraphEstimator::run_optimize() {
 
   if(debug_) {
     std::cout << "======= AFTER error ======\n";
+    //optimized_values.print();
     history_.update(optimized_values);
     graph_copy->printErrors(history_);
   }
@@ -1702,6 +1705,32 @@ void FactorGraphEstimator::add_constraints_to_gates(std::map<std::string, double
   }
    */
 }
+
+    std::vector<drone_state> FactorGraphEstimator::get_state_history() {
+      if(!debug_) {
+        std::cout << "WARNING: cannot get full state history if debug mode is not enabled" << std::endl;
+        return std::vector<drone_state>();
+      }
+      std::vector<drone_state> result;
+      for(int i = 0; i < index_; i++) {
+        if(history_.exists(symbol_shorthand::X(i))) {
+          Pose3 other_position = history_.at<Pose3>(symbol_shorthand::X(i));
+          drone_state pose;
+          pose.x = other_position.x();
+          pose.y = other_position.y();
+          pose.z = other_position.z();
+
+          gtsam::Quaternion q = other_position.rotation().toQuaternion();
+
+          pose.qw = q.w();
+          pose.qx = q.x();
+          pose.qy = q.y();
+          pose.qz = q.z();
+          result.push_back(pose);
+        }
+      }
+      return result;
+    }
 
   } // estimator
 } // StateEstimator
