@@ -129,6 +129,12 @@ class FactorGraphEstimator {
 
   std::vector<drone_state> get_state_history();
 
+  static void updatePoseAndVel(gtsam::Pose3& fixed_pose, gtsam::Vector3& fixed_vel,
+                               const gtsam::Pose3& last_fixed_pose, const gtsam::Vector3& last_fixed_vel,
+                               const gtsam::Pose3& last_guess_pose, const gtsam::Vector3& last_guess_vel,
+                               const gtsam::Pose3& guess_pose, const gtsam::Vector3& guess_vel,
+                               const double dt);
+
  private:
   virtual void register_camera(const std::string name,
                                const std::shared_ptr<gtsam::Point3> translation,
@@ -137,11 +143,13 @@ class FactorGraphEstimator {
   virtual void add_pose_factor();
   virtual void add_priors(const drone_state &initial_state);
   virtual void add_imu_factor();
-  void propagate_imu(gtsam::Vector3 acc, gtsam::Vector3 angular_vel, double dt);
+  void propagate_imu(gtsam::Pose3& result_state, gtsam::Vector3& result_vel,
+                     const gtsam::Pose3& current_state, const gtsam::Vector3& current_vel,
+                     const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt);
   int find_camera_index(double time);
   void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
   bool assign_gate_ids(std::shared_ptr<GateDetections> detection_msg, int image_index);
-  void print_values(std::shared_ptr<gtsam::Values> values);
+  void print_values(std::shared_ptr<gtsam::Values> values, std::string prefix);
   gtsam::Point3 generate_aruco_priors(const gtsam::Pose3& pos_copy, const alphapilot::Pose& pose, int index, double size);
 
   // ========== GENERIC VARS =======
@@ -179,6 +187,7 @@ class FactorGraphEstimator {
 
   // index of the current state
   int index_ = 0;
+  int last_optimized_index_ = 0;
 
   // mutex locks
   std::mutex graph_lck_; // controls isam_ and current_incremental_graph_
