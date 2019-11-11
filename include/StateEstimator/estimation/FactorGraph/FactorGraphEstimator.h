@@ -129,12 +129,6 @@ class FactorGraphEstimator {
 
   std::vector<drone_state> get_state_history();
 
-  void updatePoseAndVel(gtsam::Pose3& fixed_pose, gtsam::Vector3& fixed_vel,
-                               const gtsam::Pose3& last_fixed_pose, const gtsam::Vector3& last_fixed_vel,
-                               const gtsam::Pose3& last_guess_pose, const gtsam::Vector3& last_guess_vel,
-                               const gtsam::Pose3& guess_pose, const gtsam::Vector3& guess_vel,
-                               const double dt);
-
  private:
   virtual void register_camera(const std::string name,
                                const std::shared_ptr<gtsam::Point3> translation,
@@ -187,7 +181,6 @@ class FactorGraphEstimator {
 
   // index of the current state
   int index_ = 0;
-  int last_optimized_index_ = 0;
 
   // mutex locks
   std::mutex graph_lck_; // controls isam_ and current_incremental_graph_
@@ -225,6 +218,7 @@ class FactorGraphEstimator {
   gtsam::Values history_;
 
   // ========== IMU ===========================
+  std::vector<gtsam::ImuFactor> imu_queue_;
   gtsam::PreintegratedImuMeasurements preintegrator_imu_;
   bool use_imu_prop_ = true;
   bool imu_debug_ = false;

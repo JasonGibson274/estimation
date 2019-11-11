@@ -12,23 +12,6 @@ using namespace gtsam;
 int main() {
   FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
   std::cout << "\ninit ended\n" << std::endl;
-  double pi = M_PI;
-
-  Pose3 fixed_pose;
-  Vector3 fixed_vel;
-  Pose3 last_fixed_pose = Pose3(Rot3::Ypr(0, 0, 0), Point3(1,0,0));
-  Vector3 last_fixed_vel = Vector3(0,0,-1);
-  Pose3 last_guess_pose = Pose3(Rot3::Ypr(0,0,0), Point3(0,0,0));
-  Vector3 last_guess_vel = Vector3(0,0,0);
-  Pose3 guess_pose = Pose3(Rot3::Ypr(pi/2, 0, 0), Point3(0,0,1.0));
-  Vector3 guess_vel = Vector3(0,0,2);
-  double dt = 1;
-  estimator.updatePoseAndVel(fixed_pose, fixed_vel, last_fixed_pose, last_fixed_vel,
-          last_guess_pose, last_guess_vel, guess_pose, guess_vel, dt);
-  std::cout << "fixed pose\n" << fixed_pose << std::endl;
-  std::cout << "euler should be:\n" << Rot3::Ypr(pi,0,0).ypr().transpose() << std::endl;
-  std::cout << "euler angles:\n" << fixed_pose.rotation().ypr().transpose() << std::endl;
-  std::cout << "fixed vel\n" << fixed_vel.transpose() << std::endl;
 /*
   std::cout << "\nstarting imu callback\n" << std::endl;
   std::shared_ptr<IMU_readings> reading_imu = std::make_shared<IMU_readings>();
