@@ -568,7 +568,9 @@ bool FactorGraphEstimator::run_optimize() {
   Values optimized_values = isam_.calculateEstimate();
   auto temp_end = std::chrono::steady_clock::now();
   std::chrono::duration<double> temp_diff = temp_end - temp_start;
-  std::cout << "time to calculate estimate: " << temp_diff.count() << std::endl;
+  if(debug_) {
+    std::cout << "time to calculate estimate: " << temp_diff.count() << std::endl;
+  }
   // print out optimizations statistics
   optimization_stats_.variablesReeliminated = results.variablesReeliminated;
   optimization_stats_.variablesRelinearized = results.variablesRelinearized;
@@ -719,11 +721,8 @@ bool FactorGraphEstimator::run_optimize() {
   }
 
   graph_lck_guard.lock();
-  std::cout << "locked graph" << std::endl;
   std::lock_guard<std::mutex> preintegration_lck(preintegrator_lck_);
-  std::cout << "locked preintegration" << std::endl;
   std::lock_guard<std::mutex> latest_state_lck_guard(latest_state_lck_);
-  std::cout << "locked latest state" << std::endl;
 
   // fix the accumulated guesses
 
