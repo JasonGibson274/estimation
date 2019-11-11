@@ -9,41 +9,21 @@ using namespace alphapilot;
 using namespace gtsam;
 
 
-void updatePoseAndVelTest(gtsam::Pose3& fixed_pose, gtsam::Vector3& fixed_vel,
-                                            const gtsam::Pose3& last_fixed_pose, const gtsam::Vector3& last_fixed_vel,
-                                            const gtsam::Pose3& last_guess_pose, const gtsam::Vector3& last_guess_vel,
-                                            const gtsam::Pose3& guess_pose, const gtsam::Vector3& guess_vel,
-                                            const double dt) {
-
-  Vector3 delta_v = guess_vel - last_guess_vel;
-  std::cout << "delta_v = " << delta_v.transpose() << std::endl;
-  fixed_vel =  last_fixed_vel + (delta_v) * dt;
-
-  Vector3 fixed_translation = last_fixed_pose.translation().vector() + (last_fixed_vel * dt) +
-                              0.5 * delta_v * dt;
-
-  Rot3 delta_r = traits<gtsam::Rot3>::Between(last_guess_pose.rotation(), guess_pose.rotation());
-  std::cout << "delta_r = " << delta_r.ypr().transpose() << std::endl;
-  Rot3 fixed_rot = last_fixed_pose.rotation() * delta_r;
-  fixed_pose = Pose3(fixed_rot, fixed_translation);
-}
-
-
 int main() {
-  //FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
-  //std::cout << "\ninit ended\n" << std::endl;
+  FactorGraphEstimator estimator("/home/jason/Documents/alpha_pilot/estimation/config/configTester.yaml", "/home/jgibson37/Documents/alpha_pilot/estimation/cmake-build-debug/2019_412");
+  std::cout << "\ninit ended\n" << std::endl;
   double pi = M_PI;
 
   Pose3 fixed_pose;
   Vector3 fixed_vel;
-  Pose3 last_fixed_pose = Pose3(Rot3::Ypr(pi/2, 0, 0), Point3(1,0,0));
+  Pose3 last_fixed_pose = Pose3(Rot3::Ypr(0, 0, 0), Point3(1,0,0));
   Vector3 last_fixed_vel = Vector3(0,0,-1);
   Pose3 last_guess_pose = Pose3(Rot3::Ypr(0,0,0), Point3(0,0,0));
   Vector3 last_guess_vel = Vector3(0,0,0);
   Pose3 guess_pose = Pose3(Rot3::Ypr(pi/2, 0, 0), Point3(0,0,1.0));
   Vector3 guess_vel = Vector3(0,0,2);
   double dt = 1;
-  updatePoseAndVelTest(fixed_pose, fixed_vel, last_fixed_pose, last_fixed_vel,
+  estimator.updatePoseAndVel(fixed_pose, fixed_vel, last_fixed_pose, last_fixed_vel,
           last_guess_pose, last_guess_vel, guess_pose, guess_vel, dt);
   std::cout << "fixed pose\n" << fixed_pose << std::endl;
   std::cout << "euler should be:\n" << Rot3::Ypr(pi,0,0).ypr().transpose() << std::endl;

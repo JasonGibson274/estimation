@@ -129,7 +129,7 @@ class FactorGraphEstimator {
 
   std::vector<drone_state> get_state_history();
 
-  static void updatePoseAndVel(gtsam::Pose3& fixed_pose, gtsam::Vector3& fixed_vel,
+  void updatePoseAndVel(gtsam::Pose3& fixed_pose, gtsam::Vector3& fixed_vel,
                                const gtsam::Pose3& last_fixed_pose, const gtsam::Vector3& last_fixed_vel,
                                const gtsam::Pose3& last_guess_pose, const gtsam::Vector3& last_guess_vel,
                                const gtsam::Pose3& guess_pose, const gtsam::Vector3& guess_vel,
@@ -145,7 +145,7 @@ class FactorGraphEstimator {
   virtual void add_imu_factor();
   void propagate_imu(gtsam::Pose3& result_state, gtsam::Vector3& result_vel,
                      const gtsam::Pose3& current_state, const gtsam::Vector3& current_vel,
-                     const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt);
+                     const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt, bool use_gravity=true);
   int find_camera_index(double time);
   void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
   bool assign_gate_ids(std::shared_ptr<GateDetections> detection_msg, int image_index);
