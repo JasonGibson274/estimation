@@ -71,11 +71,12 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     }
     std::string optimzation_method = alphapilot::get<std::string>("optimizer", isam_config, std::string("GN"));
     if(optimzation_method == "DL") {
+      YAML::Node dl_config = isam_config["isamParametersDL"];
       gtsam::ISAM2DoglegParams optimizationParams;
-      optimizationParams.verbose = alphapilot::get<bool>("verbose", isam_config, false);
-      optimizationParams.wildfireThreshold = alphapilot::get<double>("wildfireThreshold", isam_config, 1e-5);
-      optimizationParams.initialDelta = alphapilot::get<double>("initialDelta", isam_config, 1.0);
-      std::string adaptationMode = alphapilot::get<std::string>("trustRegionAdaptionMode", isam_config, std::string("oneStep"));
+      optimizationParams.verbose = alphapilot::get<bool>("verbose", dl_config, false);
+      optimizationParams.wildfireThreshold = alphapilot::get<double>("wildfireThreshold", dl_config, 1e-5);
+      optimizationParams.initialDelta = alphapilot::get<double>("initialDelta", dl_config, 1.0);
+      std::string adaptationMode = alphapilot::get<std::string>("trustRegionAdaptionMode", dl_config, std::string("oneStep"));
       if(adaptationMode == "searchEachIter") {
         optimizationParams.adaptationMode = gtsam::DoglegOptimizerImpl::SEARCH_EACH_ITERATION;
       } else if(adaptationMode == "searchReduce") {
@@ -173,6 +174,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     // load the priors of the factors I care about
     std::vector<std::string> tracked_objects = alphapilot::get<std::vector<std::string>>(
             "trackedObjects", camera_config, {});
+    std::cout << "adding " << tracked_objects.size() << " tracked objects to the factor graph" << std::endl;
     for(auto &object_name : tracked_objects) {
       if(!camera_config["objectPriors"][object_name]) {
         std::cout << "WARNING: cannot find prior for object " << object_name << std::endl;
