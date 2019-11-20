@@ -809,9 +809,11 @@ void FactorGraphEstimator::callback_imu(const std::shared_ptr<IMU_readings> imu_
   double invert_z = invert_z_ ? -1.0 : 1.0;
 
   // updates the current guesses of position
-  Vector3 accel = Vector3(imu_data->x_accel * invert_x, imu_data->y_accel * invert_y, imu_data->z_accel * invert_z);
+  // Readings come in NED and Factor Graph is in NWU
+  std::shared_ptr<IMU_readings> imu_NED = std::make_shared<IMU_readings>(NED2NWU_DCM().t() * (*imu_data));
+  Vector3 accel = Vector3(imu_NED->x_accel * invert_x, imu_NED->y_accel * invert_y, imu_NED->z_accel * invert_z);
   Vector3
-          ang_rate = Vector3(imu_data->roll_vel * invert_x, imu_data->pitch_vel * invert_y, imu_data->yaw_vel * invert_z);
+          ang_rate = Vector3(imu_NED->roll_vel * invert_x, imu_NED->pitch_vel * invert_y, imu_NED->yaw_vel * invert_z);
   lock_guard<mutex> preintegration_lck(preintegrator_lck_);
   preintegrator_imu_.integrateMeasurement(accel, ang_rate, dt);
 
