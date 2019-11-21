@@ -82,7 +82,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
       } else if(adaptationMode == "searchReduce") {
         optimizationParams.adaptationMode = gtsam::DoglegOptimizerImpl::SEARCH_REDUCE_ONLY;
       } else {
-        if(adaptationMode == "oneStep") {
+        if(adaptationMode != "oneStep") {
           std::cout << "WARNING: adaptionMode in invalid " << adaptationMode << " is not in set {searchEachIter, searchReduce, oneStep}\n" <<
                                                                        " defaulting to oneStep" << std::endl;
         }
