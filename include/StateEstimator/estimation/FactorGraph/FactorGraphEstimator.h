@@ -14,18 +14,19 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/sam/RangeFactor.h>
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
+#include <gtsam/sam/RangeFactor.h>
+
+#include <yaml-cpp/yaml.h>
 
 #include <alphapilot_common/Utils.h>
 #include <alphapilot_common/GateConstraints.h>
 
+#include <cstdio>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <memory>
-#include <iostream>
-#include <cstdio>
-#include <gtsam/sam/RangeFactor.h>
-
-#include <yaml-cpp/yaml.h>
+#include <unordered_set>
 
 // TODO make callbacks pass by const reference to shared pointer
 namespace alphapilot {
