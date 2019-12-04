@@ -107,6 +107,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     YAML::Node camera_config = config["cameraConfig"];
 
     pairing_threshold_ = alphapilot::get<double>("pairingThreshold", camera_config, 0.1);
+    double camera_scale_factor = alphapilot::get<double>("scaleCameraMatricies", camera_config, 1.0);
 
     // load cameras
     std::vector<std::string> camera_names = alphapilot::get<std::vector<std::string>>("cameraNames", camera_config, {});
@@ -130,11 +131,11 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
       std::vector<double> K = alphapilot::get<std::vector<double>>("K", camera_config[camera_name],
                                                                    {0.0, 0.0, 0.0, 1.0, 0.0});
 
-      cam_info->fx = K[0];
-      cam_info->fy = K[1];
-      cam_info->s = K[2];
-      cam_info->u0 = K[3];
-      cam_info->v0 = K[4];
+      cam_info->fx = K[0] / camera_scale_factor;
+      cam_info->fy = K[1] / camera_scale_factor;
+      cam_info->s = K[2] / camera_scale_factor;
+      cam_info->u0 = K[3] / camera_scale_factor;
+      cam_info->v0 = K[4] / camera_scale_factor;
 
       register_camera(camera_name, translation, rotation, cam_info);
 
@@ -484,7 +485,7 @@ void FactorGraphEstimator::print_values(std::shared_ptr<gtsam::Values> values, s
     } else if(symbol.chr() == 'v') {
       Vector3 temp = key->value.cast<Vector3>();
       std::cout << temp.transpose() << "\n";
-    } else if(symbol.chr() == 'l' || symbol.chr() == 'a') {
+    } else if(symbol.chr() == 'l' || symbol.chr() == 'a' || symbol.chr() == 'g') {
       Point3 temp = key->value.cast<Point3>();
       std::cout << temp.transpose() << "\n";
     } else if(symbol.chr() == 'b') {
@@ -615,6 +616,7 @@ bool FactorGraphEstimator::run_optimize() {
   landmark_locations_.clear();
   for(auto it = landmark_to_id_map_.begin(); it != landmark_to_id_map_.end(); it++) {
     Point3 landmark = optimized_values.at<Point3>(symbol_shorthand::L(it->second));
+    print_projection(temp_index, landmark, camera_map["left_right"], Point2(0,0));
     alphapilot::Landmark new_landmark;
     new_landmark.position.x = landmark.x();
     new_landmark.position.y = landmark.y();
