@@ -1253,7 +1253,7 @@ void FactorGraphEstimator::callback_cm(const std::shared_ptr<GateDetections> lan
         id = landmark_to_id_map_[header];
       } else {
         // TODO if fails to find and index that matches, handle
-        std::cout << "\n\nWARNING: invalid gate: " << seen_gate.gate << "\n for subfeature: " << subfeature
+        std::cout << "\n\nWARNING: invalid gate: " << seen_gate.gate << " for subfeature: " << subfeature
                   << "\nmust register landmark first\n\n" << std::endl;
         continue;
       }
@@ -1458,7 +1458,7 @@ void FactorGraphEstimator::register_camera(const std::string name,
 
   //Rot3 new_rot = Rot3::Ypr(0, -50 * DEG_TO_RAD , 0);
   //std::cout << "rot mat = " << new_rot << std::endl;
-  cam.transform = Pose3(*rotation, *translation);
+  cam.transform = Pose3((*rotation).inverse(), *translation);
 
 
   std::cout << "Registered camera: " << name << "\n";
