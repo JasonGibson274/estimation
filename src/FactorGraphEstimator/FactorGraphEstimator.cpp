@@ -206,7 +206,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
 
     double aruco_range_noise = alphapilot::get<double>("arucoRangeNoise", aruco_config, 1.0);
     aruco_range_noise_ = gtsam::noiseModel::Isotropic::Sigma(1, aruco_range_noise);
-    aruco_constraint_noise_ = gtsam::noiseModel::Constrained::All(1);
+    aruco_constraint_noise_ = gtsam::noiseModel::Constrained::All(3);
 
     Vector6 aruco_noise;
     std::vector<double> aruco_noise_arr = alphapilot::get<std::vector<double>>("arucoNoise", aruco_config,
@@ -224,6 +224,18 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     Vector3 aruco_pose_prior_noise;
     aruco_pose_prior_noise << aruco_pose_prior_noise_arr[0], aruco_pose_prior_noise_arr[1], aruco_pose_prior_noise_arr[2];
     aruco_pose_prior_noise_ = noiseModel::Diagonal::Sigmas(aruco_pose_prior_noise);
+
+    // load priors for all of the aruco markers
+    std::vector<std::string> aruco_prior_ids = alphapilot::get<std::vector<std::string>>(
+            "arucoIds", aruco_config, {});
+    for(std::string aruco_id : aruco_prior_ids) {
+      if(!aruco_config["arucoIdsLocations"][aruco_id]) {
+        std::cout << "WARNING: cannot find prior for aruco id " << aruco_id << std::endl;
+        continue;
+      }
+      std::vector<double> location = alphapilot::get<std::vector<double>>(aruco_id, aruco_config["arucoIdsLocations"], {});
+      add_aruco_prior(location, stoi(aruco_id));
+    }
   }
 
   if (config["imuFactorParams"]) {
@@ -616,7 +628,7 @@ bool FactorGraphEstimator::run_optimize() {
   landmark_locations_.clear();
   for(auto it = landmark_to_id_map_.begin(); it != landmark_to_id_map_.end(); it++) {
     Point3 landmark = optimized_values.at<Point3>(symbol_shorthand::L(it->second));
-    print_projection(temp_index, landmark, camera_map["left_right"], Point2(0,0));
+    //print_projection(temp_index, landmark, camera_map["left_right"], Point2(0,0));
     alphapilot::Landmark new_landmark;
     new_landmark.position.x = landmark.x();
     new_landmark.position.y = landmark.y();
@@ -996,22 +1008,6 @@ void FactorGraphEstimator::add_imu_factor() {
   position_update_ = false;
 }
 
-gtsam::Point3 FactorGraphEstimator::generate_aruco_priors(const gtsam::Pose3& pos_copy, const alphapilot::Pose& pose, int index, double size) {
-  Point3 location = Point3(pose.position.x, pose.position.y, pose.position.z);
-  // TODO use the orientation to create a new position for each
-  if(index == 0) {
-    location += Point3(-size, 0, size);
-  } else if(index == 1) {
-    location += Point3(size, 0, size);
-  } else if(index == 2) {
-    location += Point3(size, 0, -size);
-  } else if(index == 3) {
-    location += Point3(-size, 0, -size);
-  }
-  Point3 prior = pos_copy * location;
-  return prior;
-}
-
 // Assumes that there is only a single instance of an ID per camera
 void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::ArucoDetections> msg) {
   if(!use_aruco_factors_) {
@@ -1036,80 +1032,25 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
 
   lock_guard<mutex> graph_lck(graph_lck_);
 
-  // get position copy
-  Pose3 position_copy;
-  if(isam_.valueExists(symbol_shorthand::X(image_index))) {
-    position_copy = isam_.calculateEstimate<Pose3>(symbol_shorthand::X(image_index));
-  } else if(current_state_guess_->exists(symbol_shorthand::X(image_index))) {
-    position_copy = current_state_guess_->at<Pose3>(symbol_shorthand::X(image_index));
-  } else {
-    position_copy = Pose3(current_position_guess_);
-  }
 
   // list of ids that have been added so there are not duplicates
   for(const alphapilot::ArucoDetection& detection : msg->detections) {
     int id_base = detection.id * 10 + 1;
 
-    double size = detection.size;
-    if(size == -1) {
-      size = aruco_length_;
-    }
-
     // use the first detection to init the location of the aruco marker in world frame
     if(aruco_indexes_.find(id_base) == aruco_indexes_.end()) {
-
-      // convert drone frame to global frame
-      if(debug_) {
-        std::cout << "creating aruco with id " << id_base << " at image index " << image_index << std::endl;
-      }
-      // convert drone frame to gloal frame
-      // insert a prior and state for each aruco
-      for(unsigned int i = 0; i < detection.points.size(); i++) {
-        Point3 prior = generate_aruco_priors(position_copy, detection.pose, i, size);
-
-        current_state_guess_->insert(symbol_shorthand::A(id_base + i), prior);
-
-        if(use_aruco_prior_) {
-          current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
-                                                              prior,
-                                                              aruco_pose_prior_noise_));
-        }
-
-      }
-      // add constraints to the graph
-      if(use_aruco_constraints_) {
-        current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base),
-                                                            symbol_shorthand::A(id_base + 1),
-                                                            size,
-                                                            aruco_constraint_noise_));
-        current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base),
-                                                            symbol_shorthand::A(id_base + 1),
-                                                            size,
-                                                            aruco_constraint_noise_));
-        current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base + 1),
-                                                            symbol_shorthand::A(id_base + 2),
-                                                            size,
-                                                            aruco_constraint_noise_));
-        current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base + 2),
-                                                            symbol_shorthand::A(id_base + 3),
-                                                            size,
-                                                            aruco_constraint_noise_));
-        current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base + 3),
-                                                            symbol_shorthand::A(id_base),
-                                                            size,
-                                                            aruco_constraint_noise_));
-        current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base),
-                                                            symbol_shorthand::A(id_base + 2),
-                                                            sqrt(2 * pow(size, 2)),
-                                                            aruco_constraint_noise_));
-        current_incremental_graph_->add(RangeFactor<Point3>(symbol_shorthand::A(id_base + 1),
-                                                            symbol_shorthand::A(id_base + 3),
-                                                            sqrt(2 * pow(size, 2)),
-                                                            aruco_constraint_noise_));
-      }
-      aruco_indexes_.insert(id_base);
+      std::cout << "WARNING: Aruco with base id: " << id_base << " does not have a prior, " <<
+                    "it will be ignored this time" << std::endl;
+      continue;
     }
-    double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
+    if(use_range_for_aruco_) {
+      double dist_aruco = alphapilot::dist(detection.pose.position, alphapilot::Point());
+      current_incremental_graph_->emplace_shared<RangeFactor<Pose3, Point3>>(
+              symbol_shorthand::X(image_index),
+              symbol_shorthand::A(id_base - 1),
+              dist_aruco,
+              aruco_range_noise_);
+    }
 
     for(unsigned int i = 0; i < detection.points.size(); i++) {
       GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
@@ -1119,13 +1060,6 @@ void FactorGraphEstimator::aruco_callback(const std::shared_ptr<alphapilot::Aruc
               symbol_shorthand::A(id_base + i), camera.K, camera.transform);
       current_incremental_graph_->push_back(projectionFactor);
 
-      if(use_range_for_aruco_) {
-        current_incremental_graph_->emplace_shared<RangeFactor<Pose3, Point3>>(
-            symbol_shorthand::X(image_index),
-            symbol_shorthand::A(id_base + i),
-            dist_aruco,
-            aruco_range_noise_);
-      }
       if(use_projection_debug_) {
         Point3 point = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
         print_projection(image_index, point, camera, detection_coords);
@@ -1707,27 +1641,93 @@ void FactorGraphEstimator::add_constraints_to_gates(std::map<std::string, double
    */
 }
 
-    std::vector<drone_state> FactorGraphEstimator::get_state_history() {
-      std::vector<drone_state> result;
-      for(int i = 0; i < index_; i++) {
-        if(history_.exists(symbol_shorthand::X(i))) {
-          Pose3 other_position = history_.at<Pose3>(symbol_shorthand::X(i));
-          drone_state pose;
-          pose.x = other_position.x();
-          pose.y = other_position.y();
-          pose.z = other_position.z();
+std::vector<drone_state> FactorGraphEstimator::get_state_history() {
+  std::vector<drone_state> result;
+  for(int i = 0; i < index_; i++) {
+    if(history_.exists(symbol_shorthand::X(i))) {
+      Pose3 other_position = history_.at<Pose3>(symbol_shorthand::X(i));
+      drone_state pose;
+      pose.x = other_position.x();
+      pose.y = other_position.y();
+      pose.z = other_position.z();
 
-          gtsam::Quaternion q = other_position.rotation().toQuaternion();
+      gtsam::Quaternion q = other_position.rotation().toQuaternion();
 
-          pose.qw = q.w();
-          pose.qx = q.x();
-          pose.qy = q.y();
-          pose.qz = q.z();
-          result.push_back(pose);
-        }
-      }
-      return result;
+      pose.qw = q.w();
+      pose.qx = q.x();
+      pose.qy = q.y();
+      pose.qz = q.z();
+      result.push_back(pose);
     }
+  }
+  return result;
+}
+
+void FactorGraphEstimator::add_aruco_prior(std::vector<double> position, int id) {
+  // debug message
+  if(debug_) {
+    std::cout << "creating aruco with id " << id << std::endl;
+  }
+  int id_base = id * 10 + 1;
+
+  // create the center of the aruco marker
+
+  // create center prior
+  gtsam::Point3 center = gtsam::Point3(position[0], position[1], position[2]);
+  current_state_guess_->insert(symbol_shorthand::A(id_base - 1), center);
+  if(use_aruco_prior_) {
+    current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base - 1),
+                                                        center,
+                                                        aruco_pose_prior_noise_));
+  }
+
+
+  // create each corner of the aruco with constraint factor and prior
+  double yaw = position[3];
+  for(unsigned int i = 0; i < 4; i++) {
+    Point3 diff;
+    if(i == 0) {
+      double x = 0 * cos(yaw) + -aruco_length_ * sin(yaw);
+      double y = -aruco_length_ * cos(yaw) + 0 * sin(yaw);
+      diff = Point3(x, y, aruco_length_ / 2);
+
+    } else if(i == 1) {
+      double x = 0 * cos(yaw) + aruco_length_ * sin(yaw);
+      double y = aruco_length_ * cos(yaw) + 0 * sin(yaw);
+      diff = Point3(x, y, aruco_length_ / 2);
+
+    } else if(i == 2) {
+      double x = 0 * cos(yaw) + aruco_length_ * sin(yaw);
+      double y = aruco_length_ * cos(yaw) + 0 * sin(yaw);
+      diff = Point3(x, y, -aruco_length_ / 2);
+
+    } else if(i == 3) {
+      double x = 0 * cos(yaw) + -aruco_length_ * sin(yaw);
+      double y = -aruco_length_ * cos(yaw) + 0 * sin(yaw);
+      diff = Point3(x, y, -aruco_length_ / 2);
+
+    }
+    std::cout << "got rotated aruco position: " << diff << std::endl;
+    Point3 prior = gtsam::Point3(center.x() + diff.x(), center.y() + diff.y(), center.z() + diff.z());
+    current_state_guess_->insert(symbol_shorthand::A(id_base + i), prior);
+
+    if(use_aruco_prior_) {
+      current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
+                                                          prior,
+                                                          aruco_pose_prior_noise_));
+    }
+
+    // add constraints to the graph
+    if(use_aruco_constraints_) {
+      current_incremental_graph_->emplace_shared<BetweenFactor<Point3>>(symbol_shorthand::A(id_base - 1),
+                                                                        symbol_shorthand::A(id_base + i),
+                                                                        diff,
+                                                                        aruco_constraint_noise_);
+    }
+
+  }
+  aruco_indexes_.insert(id_base);
+}
 
 
   } // estimator

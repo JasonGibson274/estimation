@@ -130,6 +130,8 @@ class FactorGraphEstimator {
 
   std::vector<drone_state> get_state_history();
 
+  void add_aruco_prior(std::vector<double> position, int id);
+
  private:
   virtual void register_camera(const std::string name,
                                const std::shared_ptr<gtsam::Point3> translation,
@@ -145,7 +147,6 @@ class FactorGraphEstimator {
   void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
   bool assign_gate_ids(std::shared_ptr<GateDetections> detection_msg, int image_index);
   void print_values(std::shared_ptr<gtsam::Values> values, std::string prefix);
-  gtsam::Point3 generate_aruco_priors(const gtsam::Pose3& pos_copy, const alphapilot::Pose& pose, int index, double size);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
