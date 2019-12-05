@@ -1391,8 +1391,10 @@ void FactorGraphEstimator::register_camera(const std::string name,
                                              camera_info->v0);
 
   //Rot3 new_rot = Rot3::Ypr(0, -50 * DEG_TO_RAD , 0);
-  //std::cout << "rot mat = " << new_rot << std::endl;
-  cam.transform = Pose3((*rotation).inverse(), *translation);
+  std::cout << "camera should be " << (*rotation).inverse() << std::endl;
+  std::cout << "rot mat = " << Rot3::Rx(M_PI) << std::endl;
+  Rot3 fixed_rotation =  Rot3::Rx(M_PI) * (*rotation).inverse();
+  cam.transform = Pose3(fixed_rotation, *translation);
 
 
   std::cout << "Registered camera: " << name << "\n";
