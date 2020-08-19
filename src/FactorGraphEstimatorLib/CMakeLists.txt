@@ -1,7 +1,7 @@
 #--------------------------------------------------------
 # Library Creation
 #--------------------------------------------------------
-SET (LIBRARY_NAME FactorGraphEstimator_plugin)
+SET (LIBRARY_NAME FactorGraphEstimatorLib)
 SET (LIB_MAJOR 0)
 SET (LIB_MINOR 0)
 SET (LIB_RELEASE 1)
@@ -24,7 +24,7 @@ ADD_LIBRARY(${LIBRARY_NAME} SHARED
   )
 
 TARGET_LINK_LIBRARIES(${LIBRARY_NAME}
-  ${GTSAM_LIBRARIES} ${YAML_CPP_LIBRARIES}
+  ${GTSAM_LIBRARIES} ${YAML_CPP_LIBRARIES} ${catkin_LIBRARIES} ${OpenCV_LIBRARIES}
   )
 
 SET (_soversion ${LIB_MAJOR}.${LIB_MINOR}.${LIB_RELEASE})
@@ -44,3 +44,7 @@ install(TARGETS ${LIBRARY_NAME}
 
 # Push up the PROJECT_PLUGINS variable
 set(PROJECT_PLUGINS ${PROJECT_PLUGINS} ${LIBRARY_NAME} PARENT_SCOPE)
+
+
+set(EXECUTABLE_NAME autorally_robust_standard_cost_ros)
+

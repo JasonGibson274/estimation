@@ -1,3 +1,0 @@
-[submodule "include/alphapilot_common"]
-	path = include/alphapilot_common
-	url = https://github.gatech.edu/icarus/alphapilot_common.git

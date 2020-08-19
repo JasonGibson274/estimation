@@ -14,12 +14,8 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/sam/RangeFactor.h>
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
-#include <gtsam/sam/RangeFactor.h>
 
-#include <yaml-cpp/yaml.h>
-
-#include <alphapilot_common/Utils.h>
-#include <alphapilot_common/GateConstraints.h>
+#include <utils/FileUtils.hpp>
 
 #include <cstdio>
 #include <iostream>
@@ -28,31 +24,43 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <memory>
 #include <unordered_set>
 
+// ROS variables only, can be replaced eventually but effort.
+#include <nav_msgs/Odometry.h>
+#include <sensor_msgs/Imu.h>
+#include <sensor_msgs/NavSatFix.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <sensor_msgs/CameraInfo.h>
+
+#include <autorally_estimation/ArucoDetections.h>
+#include <autorally_estimation/CameraDetections.h>
+#include <autorally_estimation/OptimizationStats.h>
+
+
 // TODO make callbacks pass by const reference to shared pointer
-namespace alphapilot {
 namespace estimator {
 struct gtsam_camera {
   gtsam::Pose3 transform;
-  boost::shared_ptr<gtsam::Cal3_S2> K;
+  boost::shared_ptr<gtsam::Cal3_S2> k;
 };
 
-struct prior_config {
-  drone_state initial_state;
+struct PriorConfig {
+  gtsam::Pose3 state;
+  gtsam::Vector3 velocity;
   double initial_vel_noise = 0.1;
   std::vector<double> initial_pose_noise = {0.05, 0.05, 0.05, 0.25, 0.25, 0.25};//rad, rad, rad, m,m,m
   double initial_bias_noise = 0.1;
 };
 
 struct optimization_stats {
-  double optimizationTime = 0.0;
-  double optimizationTimeAvg = 0.0;
-  double getLandmarksTime = 0.0;
-  double getLandmarksTimeAvg = 0.0;
-  int optimizationIterations = 0;
-  int variablesReeliminated = 0;
-  int variablesRelinearized = 0;
-  double errorBefore = 0.0;
-  double errorAfter = 0.0;
+  double optimization_time = 0.0;
+  double optimization_time_avg = 0.0;
+  double get_landmarks_time = 0.0;
+  double get_landmarks_time_avg = 0.0;
+  int optimization_iterations = 0;
+  int variables_reeliminated = 0;
+  int variables_relinearized = 0;
+  double error_before = 0.0;
+  double error_after = 0.0;
 };
 
 struct detection_header {
@@ -71,21 +79,27 @@ struct smart_detection {
   detection_header header;
 };
 
+struct Landmark {
+  std::string id = "";
+  std::string type = "";
+  geometry_msgs::Point point;
+};
+
 std::ostream& operator <<(std::ostream& os, const optimization_stats& stats) {
   os << "\nOptimization Results:\n"
-         << "\nReelimintated: " << stats.variablesReeliminated
-         << "\nRelinearized: " << stats.variablesRelinearized;
-  if(stats.errorBefore) {
-    os << "\nError Before: " << stats.errorBefore;
+         << "\nReelimintated: " << stats.variables_reeliminated
+         << "\nRelinearized: " << stats.variables_relinearized;
+  if(stats.error_before) {
+    os << "\nError Before: " << stats.error_before;
   }
-  if(stats.errorAfter) {
-   os << "\nError After : " << stats.errorAfter;
+  if(stats.error_after) {
+   os << "\nError After : " << stats.error_after;
   }
-  os << "\noptimizationIterations: " << stats.optimizationIterations
-     << "\noptimizationTime: " << stats.optimizationTime
-     << "\noptimizationTimeAvg: " << stats.optimizationTimeAvg
-     << "\ngetLandmarksTime: " << stats.getLandmarksTime
-     << "\ngetLandmarksTimeAvg: " << stats.getLandmarksTimeAvg;
+  os << "\noptimizationIterations: " << stats.optimization_iterations
+     << "\noptimizationTime: " << stats.optimization_time
+     << "\noptimizationTimeAvg: " << stats.optimization_time_avg
+     << "\ngetLandmarksTime: " << stats.get_landmarks_time
+     << "\ngetLandmarksTimeAvg: " << stats.get_landmarks_time_avg;
   return os;
 };
 
@@ -93,60 +107,52 @@ class FactorGraphEstimator {
  public:
   FactorGraphEstimator(const std::string &config_file, const std::string& full_path);
 
-  virtual void callback_cm(std::shared_ptr<alphapilot::GateDetections> detection_data);
   // TODO: Figure out what data structure is used for range finders
-  virtual void callback_range(const int rangestuff);
-  virtual void callback_odometry(const std::shared_ptr<drone_state> odom_data);
-  virtual void callback_imu(const std::shared_ptr<IMU_readings> imu_data);
-  virtual void aruco_callback(const std::shared_ptr<alphapilot::ArucoDetections> msg);
-  virtual void timing_callback(const double timestamp);
-  virtual void smart_projection_callback(const std::shared_ptr<alphapilot::CameraDetections> detections);
-  virtual optimization_stats get_optimization_stats();
-  virtual void add_constraints_to_gates(std::map<std::string, double> size_map);
+  virtual void CallbackOdometry(const std::shared_ptr<nav_msgs::Odometry> odom_data);
+  virtual void CallbackImu(const std::shared_ptr<sensor_msgs::Imu> imu_data);
+  virtual void ArucoCallback(const std::shared_ptr<autorally_estimation::ArucoDetections> msg);
+  virtual void TimingCallback(const double timestamp);
+  virtual void SmartProjectionCallback(const std::shared_ptr<autorally_estimation::CameraDetections> detections);
+  virtual optimization_stats GetOptimizationStats();
 
-  virtual std::vector<alphapilot::Landmark> get_landmark_positions();
+  virtual std::vector<Landmark> GetLandmarkPositions();
 
   /*
    * returns false if another optimization is running and it fails to lock, or if no position updates
    */
-  virtual bool run_optimize();
+  virtual bool RunOptimize();
 
-  virtual alphapilot::drone_state latest_state(bool optimize=false);
+  virtual nav_msgs::Odometry LatestState(bool optimize=false);
 
-  virtual void add_projection_prior(std::shared_ptr<Landmark> msg);
+  virtual void AddProjectionPrior(std::shared_ptr<Landmark> msg);
 
-  virtual std::vector<alphapilot::Gate> get_gates();
+  std::vector<geometry_msgs::PoseWithCovarianceStamped> GetArucoLocations();
 
-  std::vector<alphapilot::PointWithCovariance> get_aruco_locations();
+  std::map<std::string, std::vector<geometry_msgs::PoseWithCovarianceStamped>> GetSmartLocations();
 
-  std::map<std::string, std::vector<alphapilot::PointWithCovariance>> get_smart_locations();
-
-  void register_camera(const std::string name,
+  void RegisterCamera(const std::string name,
                        const std::vector<double> translation,
                        const std::vector<double> rotation,
                        const std::vector<double> intrinsics);
 
-  void calculate_gate_centers();
+  std::vector<nav_msgs::Odometry> GetStateHistory();
 
-  std::vector<drone_state> get_state_history();
-
-  void add_aruco_prior(std::vector<double> position, int id);
+  void AddArucoPrior(std::vector<double> position, int id);
 
  private:
-  virtual void register_camera(const std::string name,
+  virtual void RegisterCamera(const std::string name,
                                const std::shared_ptr<gtsam::Point3> translation,
                                const std::shared_ptr<gtsam::Rot3> rotation,
-                               const std::shared_ptr<camera_info> camera_info);
-  virtual void add_pose_factor();
-  virtual void add_priors(const drone_state &initial_state);
-  virtual void add_imu_factor();
-  void propagate_imu(gtsam::Pose3& result_state, gtsam::Vector3& result_vel,
+                               const std::shared_ptr<sensor_msgs::CameraInfo> camera_info);
+  virtual void AddPoseFactor();
+  virtual void AddPriors();
+  virtual void AddImuFactor();
+  void PropagateImu(gtsam::Pose3& result_state, gtsam::Vector3& result_vel,
                      const gtsam::Pose3& current_state, const gtsam::Vector3& current_vel,
                      const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt, bool use_gravity=true);
-  int find_camera_index(double time);
-  void print_projection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
-  bool assign_gate_ids(std::shared_ptr<GateDetections> detection_msg, int image_index);
-  void print_values(std::shared_ptr<gtsam::Values> values, std::string prefix);
+  int FindCameraIndex(double time);
+  void PrintProjection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
+  void PrintValues(std::shared_ptr<gtsam::Values> values, std::string prefix);
 
   // ========== GENERIC VARS =======
   bool debug_ = true;
@@ -154,7 +160,7 @@ class FactorGraphEstimator {
   // if any thing has updated the estimate of position
   bool position_update_ = false;
   // current estimate of the position of the drone
-  alphapilot::drone_state current_pose_estimate_;
+  nav_msgs::Odometry current_pose_estimate_;
 
   // how long the most recent optimization took
   optimization_stats optimization_stats_;
@@ -236,7 +242,7 @@ class FactorGraphEstimator {
   gtsam::imuBias::ConstantBias current_bias_guess_;
 
   // ========= PRIOR CONFIG =========
-  prior_config prior_config_;
+  PriorConfig prior_config_;
 
   // ========= POSE FACTOR HELPERS =========
   // number of pose messages
@@ -248,7 +254,7 @@ class FactorGraphEstimator {
   // current diff since last optimization for vel between factor
   gtsam::Vector3 vel_change_accum_;
   // used to calculate the diff between current and last pose
-  drone_state last_pose_state_;
+  nav_msgs::Odometry last_pose_state_;
   // noise model for pose and vel
   gtsam::noiseModel::Diagonal::shared_ptr odometry_pose_noise_;
   gtsam::noiseModel::Diagonal::shared_ptr odometry_vel_noise_;
@@ -269,8 +275,7 @@ class FactorGraphEstimator {
   // camera name to camera parameters
   std::map<std::string, gtsam_camera> camera_map;
   // L index, and actual landmark
-  std::map<int, alphapilot::Landmark> landmark_locations_;
-  std::vector<alphapilot::Gate> gate_centers_;
+  std::map<int, Landmark> landmark_locations_;
   // TODO change to pair of id and type
   std::map<detection_header, int> landmark_to_id_map_;
   int gate_landmark_index_ = 0;
@@ -285,7 +290,7 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr aruco_pose_prior_noise_;
   gtsam::noiseModel::Diagonal::shared_ptr aruco_range_noise_;
   gtsam::noiseModel::Constrained::shared_ptr aruco_constraint_noise_;
-  std::vector<alphapilot::PointWithCovariance> aruco_locations_;
+  std::vector<geometry_msgs::PoseWithCovarianceStamped> aruco_locations_;
   // list of all indexes of aruco we have seen
   std::unordered_set<int> aruco_indexes_;
   bool use_aruco_constraints_ = false;
@@ -302,10 +307,9 @@ class FactorGraphEstimator {
   std::list<smart_detection> smart_detections_queue_;
   gtsam::SmartProjectionParams projection_params_;
   // type -> resulting point
-  std::map<std::string, std::vector<alphapilot::PointWithCovariance>> smart_locations_;
+  std::map<std::string, std::vector<geometry_msgs::PoseWithCovarianceStamped>> smart_locations_;
   gtsam::noiseModel::Diagonal::shared_ptr smart_default_noise_;
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> smart_object_noises_;
 };
 } // estimator
-} // StateEstimator
 #endif // FactorGraphEstimator_H_

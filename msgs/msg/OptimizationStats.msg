@@ -1,0 +1,13 @@
+
+Header header
+string tag
+
+float64 optimizationTime
+float64 averageOptimizationTime
+float64 getLandmarkTime
+float64 averageGetLandmarkTime
+int32 optimizationIterations
+int32 variablesReeliminated
+int32 variablesRelinearized
+float64 errorBefore
+float64 errorAfter
