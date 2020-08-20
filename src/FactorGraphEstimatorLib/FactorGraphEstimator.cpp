@@ -10,6 +10,13 @@ using namespace std;
 using namespace gtsam;
 
 namespace estimator {
+  using symbol_shorthand::X; // robot Pose3 (x,y,z,r,p,y)
+  using symbol_shorthand::V; // robot linear velocity global frame? (vx,vy,vz)
+  using symbol_shorthand::B; // robot IMU/Gyro bias
+  using symbol_shorthand::G; // transform to the GPS
+  using symbol_shorthand::C; // transform to the cameras
+  using symbol_shorthand::L; // Point3 of a landmark that is being tracked
+  using symbol_shorthand::A; // variables that correspond to an aruco marker
 
 FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const std::string &full_path) {
 
@@ -141,14 +148,8 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const
     use_camera_factors_ = estimation_utils::get<bool>("useProjectionFactor", camera_config, false);
     double default_noise = estimation_utils::get<double>("defaultPixelNoise", camera_config, 10.0);
     default_camera_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
-    reassign_gate_ids_ = estimation_utils::get<bool>("reassignGateIds", camera_config, true);
     use_projection_constraints_ = estimation_utils::get<bool>("useProjectionConstraints", camera_config, false);
     projection_constraint_noise_val_ = estimation_utils::get<bool>("projectionConstraintNoise", camera_config, 0.1);
-    use_gate_center_ = estimation_utils::get<bool>("useGateCenter", camera_config, false);
-    double gate_range_noise = estimation_utils::get<double>("gateRangeNoise", camera_config, 1.0);
-    gate_range_noise_ = gtsam::noiseModel::Isotropic::Sigma(1, gate_range_noise);
-
-    gate_dist_threshold_ = estimation_utils::get<double>("gateDistThreshold", camera_config, 10.0);
 
     projection_constraint_noise_ = gtsam::noiseModel::Constrained::All(3);
     projection_landmark_noise_ = noiseModel::Isotropic::Sigma(3, projection_constraint_noise_val_);
@@ -353,13 +354,12 @@ void FactorGraphEstimator::AddPriors() {
   vel_change_accum_ = Vector3(0, 0, 0);
 
   // insert initial guesses of state
-  current_state_guess_->insert(symbol_shorthand::X(index_),
-                               current_position_guess_);
-  current_state_guess_->insert(symbol_shorthand::V(index_),
+  current_state_guess_->insert(X(index_), current_position_guess_);
+  current_state_guess_->insert(V(index_),
                                current_velocity_guess_);
 
   if (use_imu_factors_) {
-    current_state_guess_->insert(symbol_shorthand::B(bias_index_),
+    current_state_guess_->insert(B(bias_index_),
                                  current_bias_guess_);
   }
 
@@ -383,15 +383,15 @@ void FactorGraphEstimator::AddPriors() {
   }
 
   // priors match initial guess
-  current_incremental_graph_->add(PriorFactor<Pose3>(symbol_shorthand::X(index_),
+  current_incremental_graph_->add(PriorFactor<Pose3>(X(index_),
                                                      current_position_guess_,
                                                      pose_noise_model));
-  current_incremental_graph_->add(PriorFactor<Vector3>(symbol_shorthand::V(index_),
+  current_incremental_graph_->add(PriorFactor<Vector3>(V(index_),
                                                        current_velocity_guess_,
                                                        velocity_noise_model));
 
   if (use_imu_factors_) {
-    current_incremental_graph_->add(PriorFactor<imuBias::ConstantBias>(symbol_shorthand::B(bias_index_),
+    current_incremental_graph_->add(PriorFactor<imuBias::ConstantBias>(B(bias_index_),
                                                                        current_bias_guess_,
                                                                        bias_noise_model));
   }
@@ -489,6 +489,7 @@ bool FactorGraphEstimator::RunOptimize() {
 
   // run the optimization and output the final state
   std::unique_lock<std::mutex> graph_lck_guard(graph_lck_);
+  // stores the current state of the local graph so that we can continue to build a local graph while optimizing
   int temp_index = index_;
   int temp_bias_index = bias_index_;
   if(debug_) {
@@ -516,7 +517,7 @@ bool FactorGraphEstimator::RunOptimize() {
               << "\nat state index " << detection.state_index << " of " << detection.detection << std::endl;
     }
     // TODO should also add camera key detection came from
-    id_to_smart_landmarks_[detection.header]->add(detection.detection, symbol_shorthand::X(detection.state_index));
+    id_to_smart_landmarks_[detection.header]->add(detection.detection, X(detection.state_index));
     smart_detections_queue_.pop_front();
   }
   smart_detections_lck_.unlock();
@@ -590,7 +591,7 @@ bool FactorGraphEstimator::RunOptimize() {
   // calculate the locations of the landmarks
   landmark_locations_.clear();
   for(auto it = landmark_to_id_map_.begin(); it != landmark_to_id_map_.end(); it++) {
-    Point3 landmark = optimized_values.at<Point3>(symbol_shorthand::L(it->second));
+    Point3 landmark = optimized_values.at<Point3>(L(it->second));
     //print_projection(temp_index, landmark, camera_map["left_right"], Point2(0,0));
     Landmark new_landmark;
     new_landmark.point.x = landmark.x();
@@ -611,14 +612,14 @@ bool FactorGraphEstimator::RunOptimize() {
   for(int id_base : aruco_indexes_) {
     int num_points = 0;
     for(int i = 0; i < 4; i++) {
-      if (optimized_values.exists(symbol_shorthand::A(id_base + i))) {
-        Point3 aruco = optimized_values.at<Point3>(symbol_shorthand::A(id_base + i));
+      if (optimized_values.exists(A(id_base + i))) {
+        Point3 aruco = optimized_values.at<Point3>(A(id_base + i));
         geometry_msgs::PoseWithCovarianceStamped pos;
         pos.pose.pose.position.x = aruco.x();
         pos.pose.pose.position.y = aruco.y();
         pos.pose.pose.position.z = aruco.z();
 
-        Matrix aruco_cov = isam_.marginalCovariance(symbol_shorthand::A(id_base + i));
+        Matrix aruco_cov = isam_.marginalCovariance(A(id_base + i));
         for(int j = 0; j < 3; j++) {
           for(int k = 0; k < 3; k++) {
             pos.pose.covariance[j * 3 + k] = aruco_cov(j, k);
@@ -673,12 +674,12 @@ bool FactorGraphEstimator::RunOptimize() {
   // optimized means the most recently optimized node (most recent states that have just been optimized but not applied)
   //std::cout << "optimized values: " << std::endl;
   //optimized_values.print();
-  Pose3 optimized_pose = optimized_values.at<Pose3>(symbol_shorthand::X(temp_index));
-  Matrix pose_cov = isam_.marginalCovariance(symbol_shorthand::X(temp_index));
-  Vector3 optimized_vel = optimized_values.at<Vector3>(symbol_shorthand::V(temp_index));
-  Matrix vel_cov = isam_.marginalCovariance(symbol_shorthand::V(temp_index));
+  Pose3 optimized_pose = optimized_values.at<Pose3>(X(temp_index));
+  Matrix pose_cov = isam_.marginalCovariance(X(temp_index));
+  Vector3 optimized_vel = optimized_values.at<Vector3>(V(temp_index));
+  Matrix vel_cov = isam_.marginalCovariance(V(temp_index));
   if (use_imu_bias_ && use_imu_factors_) {
-    current_bias_guess_ = optimized_values.at<imuBias::ConstantBias>(symbol_shorthand::B(temp_bias_index));
+    current_bias_guess_ = optimized_values.at<imuBias::ConstantBias>(B(temp_bias_index));
   }
   if(debug_) {
     std::cout << "\ntemp_index = " << temp_index << "\n"
@@ -917,15 +918,15 @@ void FactorGraphEstimator::AddImuFactor() {
   lock_guard<mutex> lck(graph_lck_);
   if (use_imu_bias_ && index_ % imu_bias_incr_ == 0) {
     bias_index_++;
-    Symbol b1 = symbol_shorthand::B(bias_index_ - 1);
-    Symbol b2 = symbol_shorthand::B(bias_index_);
+    Symbol b1 = B(bias_index_ - 1);
+    Symbol b2 = B(bias_index_);
 
     // Motion model of bias - currently constant bias is assumed
     // Add factor to graph and add initial variable guesses
     current_incremental_graph_->emplace_shared<BetweenFactor<
         imuBias::ConstantBias>>(b1, b2, imuBias::ConstantBias(),
                                 bias_noise_);
-    current_state_guess_->insert(symbol_shorthand::B(bias_index_),
+    current_state_guess_->insert(B(bias_index_),
                                                current_bias_guess_);
   }
   lock_guard<mutex> preintegrator_lck(preintegrator_lck_);
@@ -937,17 +938,17 @@ void FactorGraphEstimator::AddImuFactor() {
   if(use_imu_prop_) {
     lock_guard<mutex> latest_state_lck(latest_state_lck_);
     // Add factor to graph and add initial variable guesses
-    current_state_guess_->insert(symbol_shorthand::X(index_ + 1),
+    current_state_guess_->insert(X(index_ + 1),
                                                current_position_guess_);
-    current_state_guess_->insert(symbol_shorthand::V(index_ + 1),
+    current_state_guess_->insert(V(index_ + 1),
                                                current_velocity_guess_);
   }
 
-  ImuFactor imufac(symbol_shorthand::X(index_),
-                   symbol_shorthand::V(index_),
-                   symbol_shorthand::X(index_ + 1),
-                   symbol_shorthand::V(index_ + 1),
-                   symbol_shorthand::B(bias_index_),
+  ImuFactor imufac(X(index_),
+                   V(index_),
+                   X(index_ + 1),
+                   V(index_ + 1),
+                   B(bias_index_),
                    preintegrator_imu_);
 
   // prevents current_vel and pos from being updated
@@ -972,7 +973,7 @@ void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimat
               << std::endl;
     return;
   }
-  gtsam_camera camera = camera_map[msg->camera_name];
+  GtsamCamera camera = camera_map[msg->camera_name];
   int image_index = FindCameraIndex(msg->header.stamp.toSec());
   // if there is some time delay in aruco, check to make sure we have the right image
   if(image_index == -1) {
@@ -998,8 +999,8 @@ void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimat
       // finds the norm
       double dist_aruco = sqrt(pow(detection.pose.position.x, 2) + pow(detection.pose.position.y, 2) + pow(detection.pose.position.z, 2));
       current_incremental_graph_->emplace_shared<RangeFactor<Pose3, Point3>>(
-              symbol_shorthand::X(image_index),
-              symbol_shorthand::A(id_base - 1),
+              X(image_index),
+              A(id_base - 1),
               dist_aruco,
               aruco_range_noise_);
     }
@@ -1008,12 +1009,12 @@ void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimat
       GenericProjectionFactor<Pose3, Point3, Cal3_S2>::shared_ptr projectionFactor;
       Point2 detection_coords = Point2(detection.detections.at(i*2), detection.detections.at(i*2+1));
       projectionFactor = boost::make_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2>>(
-              detection_coords, aruco_camera_noise_, symbol_shorthand::X(image_index),
-              symbol_shorthand::A(id_base + i), camera.k, camera.transform);
+              detection_coords, aruco_camera_noise_, X(image_index),
+              A(id_base + i), camera.k, camera.transform);
       current_incremental_graph_->push_back(projectionFactor);
 
       if(use_projection_debug_) {
-        Point3 point = isam_.calculateEstimate<Point3>(symbol_shorthand::A(id_base + i));
+        Point3 point = isam_.calculateEstimate<Point3>(A(id_base + i));
         PrintProjection(image_index, point, camera, detection_coords);
       }
     }
@@ -1023,24 +1024,24 @@ void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimat
 
 void FactorGraphEstimator::AddProjectionPrior(std::shared_ptr<Landmark> msg) {
   Point3 prior = Point3(msg->point.x, msg->point.y, msg->point.z);
-  detection_header header;
+  DetectionHeader header;
   header.type = msg->type;
   header.id = msg->id;
-  landmark_to_id_map_.insert(std::make_pair(header, gate_landmark_index_));
+  landmark_to_id_map_.insert(std::make_pair(header, landmark_index_));
   if(debug_) {
     std::cout << "\nadding object prior id:" << header.id << " and type: " << header.type << " with index = "
-              << gate_landmark_index_ << "\n"
+              << landmark_index_ << "\n"
               << "Prior: " << prior.transpose() << "\n"
               << "Noise: " << landmark_prior_noise_->sigmas().transpose() << std::endl;
   }
   // add prior factor
-  current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::L(gate_landmark_index_),
+  current_incremental_graph_->add(PriorFactor<Point3>(L(landmark_index_),
                                                 prior,
                                                 landmark_prior_noise_));
-  int my_index = gate_landmark_index_;
+  int my_index = landmark_index_;
   // add initial guess as well
-  current_state_guess_->insert(symbol_shorthand::L(my_index), prior);
-  ++gate_landmark_index_;
+  current_state_guess_->insert(L(my_index), prior);
+  ++landmark_index_;
 
   // find what other landmarks are associated with this one and relate them with between factors
   if(use_projection_constraints_) {
@@ -1049,10 +1050,10 @@ void FactorGraphEstimator::AddProjectionPrior(std::shared_ptr<Landmark> msg) {
         std::lock_guard<std::mutex> graph_lck(graph_lck_);
         int other_index = it->second;
         Point3 other_position;
-        if(current_state_guess_->exists(symbol_shorthand::L(other_index))) {
-          other_position = current_state_guess_->at<Point3>(symbol_shorthand::L(other_index));
-        } else if(history_.exists(symbol_shorthand::L(other_index))) {
-          other_position = history_.at<Point3>(symbol_shorthand::L(other_index));
+        if(current_state_guess_->exists(L(other_index))) {
+          other_position = current_state_guess_->at<Point3>(L(other_index));
+        } else if(history_.exists(L(other_index))) {
+          other_position = history_.at<Point3>(L(other_index));
         } else {
           std::cout << "WARNING: cannot find match for landmark" << std::endl;
           continue;
@@ -1063,8 +1064,8 @@ void FactorGraphEstimator::AddProjectionPrior(std::shared_ptr<Landmark> msg) {
           std::cout << "adding between factor " << my_index << " -> " << other_index << "\n";
           std::cout << diff.transpose() << std::endl;
         }
-        current_incremental_graph_->emplace_shared<BetweenFactor<Point3>>(symbol_shorthand::L(my_index),
-                                                                          symbol_shorthand::L(other_index),
+        current_incremental_graph_->emplace_shared<BetweenFactor<Point3>>(L(my_index),
+                                                                          L(other_index),
                                                                           diff,
                                                                           projection_constraint_noise_);
       }
@@ -1154,11 +1155,11 @@ void FactorGraphEstimator::AddPoseFactor() {
   Rot3 new_rot = pose_rot_accum_ * current_position_guess_.rotation();
 
   Point3 new_point = current_position_guess_.translation() + pose_trans_accum_;
-  current_state_guess_->insert(symbol_shorthand::X(index_ + 1),
+  current_state_guess_->insert(X(index_ + 1),
                                             Pose3(new_rot, new_point));
 
   Vector3 temp_vel = current_velocity_guess_ + vel_change_accum_;
-  current_state_guess_->insert(symbol_shorthand::V(index_ + 1), temp_vel);
+  current_state_guess_->insert(V(index_ + 1), temp_vel);
 
   // add constraint on the poses
   // transforms the position offset into body frame offset
@@ -1166,14 +1167,14 @@ void FactorGraphEstimator::AddPoseFactor() {
 
 
   // assumes that the pose change is in body frame
-  current_incremental_graph_->emplace_shared<BetweenFactor<Pose3>>(symbol_shorthand::X(index_),
-                                                                  symbol_shorthand::X(index_ + 1),
+  current_incremental_graph_->emplace_shared<BetweenFactor<Pose3>>(X(index_),
+                                                                  X(index_ + 1),
                                                                   Pose3(pose_rot_accum_, body_trans),
                                                                   odometry_pose_noise_);
 
   // add constraint on the velocity
-  current_incremental_graph_->emplace_shared<BetweenFactor<Vector3>>(symbol_shorthand::V(index_),
-                                                                    symbol_shorthand::V(index_ + 1),
+  current_incremental_graph_->emplace_shared<BetweenFactor<Vector3>>(V(index_),
+                                                                    V(index_ + 1),
                                                                     vel_change_accum_,
                                                                     odometry_vel_noise_);
   /*
@@ -1240,7 +1241,7 @@ void FactorGraphEstimator::RegisterCamera(const std::string name,
     std::cout << "WARNING: invalid name of camera cannot be empty" << std::endl;
   }
   // TODO validate the camera intrinsics make sense
-  gtsam_camera cam;
+  GtsamCamera cam;
   // x focal, y focal, skew, center in x, center in y
   cam.k = boost::make_shared<gtsam::Cal3_S2>(camera_info->K[0],
                                              camera_info->K[4],
@@ -1258,10 +1259,10 @@ void FactorGraphEstimator::RegisterCamera(const std::string name,
   std::cout << "Registered camera: " << name << "\n";
   cam.k->print();
   std::cout << "\ntransform = " << cam.transform << std::endl;
-  camera_map.insert(std::pair<std::string, gtsam_camera>(name, cam));
+  camera_map.insert(std::pair<std::string, GtsamCamera>(name, cam));
 }
 
-optimization_stats FactorGraphEstimator::GetOptimizationStats() {
+OptimizationStats FactorGraphEstimator::GetOptimizationStats() {
   return optimization_stats_;
 }
 
@@ -1293,17 +1294,17 @@ int FactorGraphEstimator::FindCameraIndex(double time) {
   return -1;
 }
 
-void FactorGraphEstimator::PrintProjection(int image_index, Point3 location, gtsam_camera camera, Point2 detection_coords) {
+void FactorGraphEstimator::PrintProjection(int image_index, Point3 location, GtsamCamera camera, Point2 detection_coords) {
   // TODO throws exception
   Pose3 position;
   bool print = false;
-  if(history_.exists(symbol_shorthand::X(image_index))) {
+  if(history_.exists(X(image_index))) {
     print = true;
-    position = history_.at<Pose3>(symbol_shorthand::X(image_index));
+    position = history_.at<Pose3>(X(image_index));
   }
-  if(!print && current_state_guess_->exists(symbol_shorthand::X(image_index))) {
+  if(!print && current_state_guess_->exists(X(image_index))) {
     print = true;
-    position = current_state_guess_->at<Pose3>(symbol_shorthand::X(image_index));
+    position = current_state_guess_->at<Pose3>(X(image_index));
   }
   if(print) {
     //std::cout << "\n\nposition " << position << std::endl;
@@ -1355,10 +1356,10 @@ void FactorGraphEstimator::SmartProjectionCallback(const std::shared_ptr<autoral
   }
 
   // New Landmark - Add a new Factor
-  gtsam_camera camera = camera_map[detections->header.frame_id];
+  GtsamCamera camera = camera_map[detections->header.frame_id];
 
   for(autorally_estimation::CameraDetection detection : detections->detections) {
-    detection_header header;
+    DetectionHeader header;
     header.type = detection.type;
     header.id = detection.id;
     header.camera = detections->header.frame_id;
@@ -1393,8 +1394,8 @@ void FactorGraphEstimator::SmartProjectionCallback(const std::shared_ptr<autoral
 std::vector<nav_msgs::Odometry> FactorGraphEstimator::GetStateHistory() {
   std::vector<nav_msgs::Odometry> result;
   for(int i = 0; i < index_; i++) {
-    if(history_.exists(symbol_shorthand::X(i))) {
-      Pose3 other_position = history_.at<Pose3>(symbol_shorthand::X(i));
+    if(history_.exists(X(i))) {
+      Pose3 other_position = history_.at<Pose3>(X(i));
       nav_msgs::Odometry pose;
       pose.pose.pose.position.x = other_position.x();
       pose.pose.pose.position.y = other_position.y();
@@ -1423,9 +1424,9 @@ void FactorGraphEstimator::AddArucoPrior(std::vector<double> position, int id) {
 
   // create center prior
   gtsam::Point3 center = gtsam::Point3(position[0], position[1], position[2]);
-  current_state_guess_->insert(symbol_shorthand::A(id_base - 1), center);
+  current_state_guess_->insert(A(id_base - 1), center);
   if(use_aruco_prior_) {
-    current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base - 1),
+    current_incremental_graph_->add(PriorFactor<Point3>(A(id_base - 1),
                                                         center,
                                                         aruco_pose_prior_noise_));
   }
@@ -1458,18 +1459,18 @@ void FactorGraphEstimator::AddArucoPrior(std::vector<double> position, int id) {
     }
     std::cout << "got rotated aruco position: " << diff << std::endl;
     Point3 prior = gtsam::Point3(center.x() + diff.x(), center.y() + diff.y(), center.z() + diff.z());
-    current_state_guess_->insert(symbol_shorthand::A(id_base + i), prior);
+    current_state_guess_->insert(A(id_base + i), prior);
 
     if(use_aruco_prior_) {
-      current_incremental_graph_->add(PriorFactor<Point3>(symbol_shorthand::A(id_base + i),
+      current_incremental_graph_->add(PriorFactor<Point3>(A(id_base + i),
                                                           prior,
                                                           aruco_pose_prior_noise_));
     }
 
     // add constraints to the graph
     if(use_aruco_constraints_) {
-      current_incremental_graph_->emplace_shared<BetweenFactor<Point3>>(symbol_shorthand::A(id_base - 1),
-                                                                        symbol_shorthand::A(id_base + i),
+      current_incremental_graph_->emplace_shared<BetweenFactor<Point3>>(A(id_base - 1),
+                                                                        A(id_base + i),
                                                                         diff,
                                                                         aruco_constraint_noise_);
     }

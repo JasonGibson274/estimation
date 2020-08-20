@@ -38,7 +38,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 
 // TODO make callbacks pass by const reference to shared pointer
 namespace estimator {
-struct gtsam_camera {
+struct GtsamCamera {
   gtsam::Pose3 transform;
   boost::shared_ptr<gtsam::Cal3_S2> k;
 };
@@ -51,7 +51,7 @@ struct PriorConfig {
   double initial_bias_noise = 0.1;
 };
 
-struct optimization_stats {
+struct OptimizationStats {
   double optimization_time = 0.0;
   double optimization_time_avg = 0.0;
   double get_landmarks_time = 0.0;
@@ -63,20 +63,20 @@ struct optimization_stats {
   double error_after = 0.0;
 };
 
-struct detection_header {
+struct DetectionHeader {
   std::string type = "";
   std::string id = "";
   std::string camera = "";
 };
 
-bool operator <(const detection_header& x, const detection_header& y) {
+bool operator <(const DetectionHeader& x, const DetectionHeader& y) {
   return x.camera+"_"+x.type+"_"+x.id <  y.camera+"_"+y.type+"_"+y.id;
 }
 
 struct smart_detection {
   gtsam::Point2 detection;
   int state_index;
-  detection_header header;
+  DetectionHeader header;
 };
 
 struct Landmark {
@@ -85,7 +85,7 @@ struct Landmark {
   geometry_msgs::Point point;
 };
 
-std::ostream& operator <<(std::ostream& os, const optimization_stats& stats) {
+std::ostream& operator <<(std::ostream& os, const OptimizationStats& stats) {
   os << "\nOptimization Results:\n"
          << "\nReelimintated: " << stats.variables_reeliminated
          << "\nRelinearized: " << stats.variables_relinearized;
@@ -113,7 +113,7 @@ class FactorGraphEstimator {
   virtual void ArucoCallback(const std::shared_ptr<autorally_estimation::ArucoDetections> msg);
   virtual void TimingCallback(const double timestamp);
   virtual void SmartProjectionCallback(const std::shared_ptr<autorally_estimation::CameraDetections> detections);
-  virtual optimization_stats GetOptimizationStats();
+  virtual OptimizationStats GetOptimizationStats();
 
   virtual std::vector<Landmark> GetLandmarkPositions();
 
@@ -124,7 +124,7 @@ class FactorGraphEstimator {
 
   virtual nav_msgs::Odometry LatestState(bool optimize=false);
 
-  virtual void AddProjectionPrior(std::shared_ptr<Landmark> msg);
+  void AddProjectionPrior(std::shared_ptr<Landmark> msg);
 
   std::vector<geometry_msgs::PoseWithCovarianceStamped> GetArucoLocations();
 
@@ -151,7 +151,7 @@ class FactorGraphEstimator {
                      const gtsam::Pose3& current_state, const gtsam::Vector3& current_vel,
                      const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt, bool use_gravity=true);
   int FindCameraIndex(double time);
-  void PrintProjection(int image_index, gtsam::Point3 position, gtsam_camera camera, gtsam::Point2 detections_coords);
+  void PrintProjection(int image_index, gtsam::Point3 position, GtsamCamera camera, gtsam::Point2 detections_coords);
   void PrintValues(std::shared_ptr<gtsam::Values> values, std::string prefix);
 
   // ========== GENERIC VARS =======
@@ -163,7 +163,7 @@ class FactorGraphEstimator {
   nav_msgs::Odometry current_pose_estimate_;
 
   // how long the most recent optimization took
-  optimization_stats optimization_stats_;
+  OptimizationStats optimization_stats_;
 
   // flags to determine if factors are used
   bool use_pose_factors_ = true;
@@ -197,7 +197,6 @@ class FactorGraphEstimator {
   std::mutex optimization_lck_; // lock to prevent multiple optimization running concurrently
   std::mutex landmark_lck_; // lock to prevent reading and writing to landmark_locations_
   std::mutex preintegrator_lck_; // lock to control preintegrator
-  std::mutex gate_lck_; // lock to control gate_centers_
   std::mutex aruco_locations_lck_; // lock to control aruco positions
   std::mutex smart_detections_lck_; // lock to control smart detections queue
   std::mutex smart_locations_lck_; // lock to control smart detection locations
@@ -218,7 +217,6 @@ class FactorGraphEstimator {
       * 2 == top right
       * 3 == bottom right
       * 4 == bottom left
-   * G(t) center of gate with id t
    */
   std::shared_ptr<gtsam::Values> current_state_guess_;
 
@@ -265,25 +263,17 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Diagonal::shared_ptr default_camera_noise_;
   gtsam::noiseModel::Diagonal::shared_ptr projection_landmark_noise_;
   gtsam::noiseModel::Constrained::shared_ptr projection_constraint_noise_;
-  std::unordered_set<std::string> gate_center_inited_;
   double projection_constraint_noise_val_;
-  // will estimate gate center in graph
-  bool use_gate_center_ = false;
-  gtsam::noiseModel::Diagonal::shared_ptr gate_range_noise_;
   // will turn off projection constraints
   bool use_projection_constraints_ = false;
   // camera name to camera parameters
-  std::map<std::string, gtsam_camera> camera_map;
+  std::map<std::string, GtsamCamera> camera_map;
   // L index, and actual landmark
   std::map<int, Landmark> landmark_locations_;
   // TODO change to pair of id and type
-  std::map<detection_header, int> landmark_to_id_map_;
-  int gate_landmark_index_ = 0;
+  std::map<DetectionHeader, int> landmark_to_id_map_;
+  int landmark_index_ = 0;
   gtsam::noiseModel::Diagonal::shared_ptr landmark_prior_noise_;
-  // will reassign gate ids based on proximity to landmarks
-  bool reassign_gate_ids_ = true;
-  // maximum distance between estimated gate position to be classified correctly
-  double gate_dist_threshold_ = 10;
 
   // ========== ARUCO FACTOR =============
   gtsam::noiseModel::Diagonal::shared_ptr aruco_camera_noise_;
@@ -303,7 +293,7 @@ class FactorGraphEstimator {
   // ========== SMART POSE PROJECTION FACTOR =============
   bool use_smart_pose_projection_factor_ = false;
   // header (id and type) to factor
-  std::map<detection_header, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> id_to_smart_landmarks_;
+  std::map<DetectionHeader, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> id_to_smart_landmarks_;
   std::list<smart_detection> smart_detections_queue_;
   gtsam::SmartProjectionParams projection_params_;
   // type -> resulting point
