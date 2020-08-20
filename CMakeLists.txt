@@ -12,6 +12,7 @@ message("WE ARE USING ${CMAKE_INCLUDE_SYSTEM_FLAG_CXX}")
 
 set(BUILD_FLAGS "-std=c++11 -Wuninitialized -Wall")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${BUILD_FLAGS}")
+option(BUILD_TESTS "BUILD_TESTS" ON)
 
 # Allow the lib location to be overwritten from command line
 if (NOT CMAKE_LIBRARY_OUTPUT_DIRECTORY)
@@ -109,4 +110,47 @@ install(DIRECTORY launch/
 install(DIRECTORY include/${PROJECT_NAME}/
         DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
         )
+
+
+# Use CMake to download gtest as part of the configure step
+###################################################################
+# Add gtest
+###################################################################
+if (BUILD_TESTS)
+  message(STATUS "Building autorally_estimation tests")
+  enable_testing()
+  ############################################################
+  # copied from
+  # https://github.com/google/googletest/tree/master/googletest#incorporating-into-an-existing-cmake-project
+  ############################################################
+  # Download and unpack googletest at configure time
+  if (NOT TARGET gtest_main)
+    configure_file(${CMAKE_MODULE_PATH}/CMakeLists.txt.gtest.in
+            ${PROJECT_BINARY_DIR}/googletest-download/CMakeLists.txt)
+    execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+            RESULT_VARIABLE result
+            WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/googletest-download )
+    if(result)
+      message(FATAL_ERROR "CMake step for googletest failed: ${result}")
+    endif()
+    execute_process(COMMAND ${CMAKE_COMMAND} --build .
+            RESULT_VARIABLE result
+            WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/googletest-download )
+    if(result)
+      message(FATAL_ERROR "Build step for googletest failed: ${result}")
+    endif()
+
+    # Prevent overriding the parent project's compiler/linker
+    # settings on Windows
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+    # Add googletest directly to our build. This defines
+    # the gtest and gtest_main targets.
+    add_subdirectory(${PROJECT_BINARY_DIR}/googletest-src
+            ${PROJECT_BINARY_DIR}/googletest-build)
+  endif()
+
+  include(GoogleTest)
+  add_subdirectory(tests)
+endif()
 

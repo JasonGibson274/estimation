@@ -18,7 +18,7 @@ namespace estimator {
   using symbol_shorthand::L; // Point3 of a landmark that is being tracked
   using symbol_shorthand::A; // variables that correspond to an aruco marker
 
-FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file, const std::string &full_path) {
+FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
 
   if(debug_) {
     std::cout << "loading config file from " << config_file << std::endl;

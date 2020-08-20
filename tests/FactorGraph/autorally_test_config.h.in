@@ -1,0 +1,9 @@
+#ifndef TESTS_AUTORALLY_TEST_CONFIG_H_
+#define TESTS_AUTORALLY_TEST_CONFIG_H_
+
+#include <string>
+
+namespace tests {
+	const std::string test_config_file = "@TEST_CONFIG_FOLDER@/test_config.yaml";
+}
+#endif // TESTS_AUTORALLY_TEST_CONFIG_H_

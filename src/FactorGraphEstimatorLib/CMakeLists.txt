@@ -45,6 +45,3 @@ install(TARGETS ${LIBRARY_NAME}
 # Push up the PROJECT_PLUGINS variable
 set(PROJECT_PLUGINS ${PROJECT_PLUGINS} ${LIBRARY_NAME} PARENT_SCOPE)
 
-
-set(EXECUTABLE_NAME autorally_robust_standard_cost_ros)
-

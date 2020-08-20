@@ -105,7 +105,7 @@ std::ostream& operator <<(std::ostream& os, const OptimizationStats& stats) {
 
 class FactorGraphEstimator {
  public:
-  FactorGraphEstimator(const std::string &config_file, const std::string& full_path);
+  FactorGraphEstimator(const std::string &config_file);
 
   // TODO: Figure out what data structure is used for range finders
   virtual void CallbackOdometry(const std::shared_ptr<nav_msgs::Odometry> odom_data);
