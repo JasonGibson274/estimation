@@ -204,24 +204,67 @@ TEST(FactorGraphEstimatorLibSimple, propagateImu) {
   gtsam::Pose3 pose(rotation, position);
   gtsam::Vector3 vel(0.0, 0.0, 0.0);
 
-  gtsam::Pose3 result_state;
-  gtsam::Vector3 result_vel;
-
   gtsam::Vector3 acc(0.0, 0.0, 9.81);
-  gtsam::Vector3 angualr_vel(0.0, 0.0, 0.0);
+  gtsam::Vector3 angular_vel(0.0, 0.0, 0.0);
   double dt = 0.1;
 
-  estimator.PropagateImu(result_state, result_vel, pose, vel,
-                         acc, angualr_vel, dt, true);
+  gtsam::PreintegratedImuMeasurements preintegrator = estimator.getImuMeasurementsObject();
+  preintegrator.integrateMeasurement(acc, angular_vel, dt);
 
-  EXPECT_DOUBLE_EQ(result_state.x(), 0.0);
-  EXPECT_DOUBLE_EQ(result_state.y(), 0.0);
-  EXPECT_DOUBLE_EQ(result_state.z(), 1.0);
+  estimator.PropagateImu(pose, vel, preintegrator);
 
-  EXPECT_DOUBLE_EQ(result_state.rotation().quaternion().w(), 0.0);
-  EXPECT_DOUBLE_EQ(result_state.rotation().quaternion().x(), 1.0);
-  EXPECT_DOUBLE_EQ(result_state.rotation().quaternion().y(), 0.0);
-  EXPECT_DOUBLE_EQ(result_state.rotation().quaternion().z(), 0.0);
+  EXPECT_DOUBLE_EQ(pose.x(), 0.0);
+  EXPECT_DOUBLE_EQ(pose.y(), 0.0);
+  EXPECT_DOUBLE_EQ(pose.z(), 1.0);
+
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[0], 1.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[1], 0.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[2], 0.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[3], 0.0);
+
+  EXPECT_DOUBLE_EQ(vel.x(), 0.0);
+  EXPECT_DOUBLE_EQ(vel.y(), 0.0);
+  EXPECT_NEAR(vel.z(), 0.0, 1e-6);
+
+  acc = gtsam::Vector3(1.0, 1.0, 9.81);
+  angular_vel = gtsam::Vector3(0.0, 0.0, 0.0);
+  preintegrator.integrateMeasurement(acc, angular_vel, dt);
+
+  estimator.PropagateImu(pose, vel, preintegrator);
+
+  EXPECT_DOUBLE_EQ(pose.x(), 0.005);
+  EXPECT_DOUBLE_EQ(pose.y(), 0.005);
+  EXPECT_DOUBLE_EQ(pose.z(), 1.0);
+
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[0], 1.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[1], 0.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[2], 0.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[3], 0.0);
+
+  EXPECT_DOUBLE_EQ(vel.x(), 0.1);
+  EXPECT_DOUBLE_EQ(vel.y(), 0.1);
+  EXPECT_NEAR(vel.z(), 0.0, 1e-6);
+
+  /*
+  acc = gtsam::Vector3(1.0, -1.0, 9.81);
+  angular_vel = gtsam::Vector3(1.0, 0.0, -1.0);
+  preintegrator.integrateMeasurement(acc, angular_vel, dt);
+
+  estimator.PropagateImu(pose, vel, preintegrator);
+
+  EXPECT_DOUBLE_EQ(pose.x(), 0.005);
+  EXPECT_DOUBLE_EQ(pose.y(), 0.005);
+  EXPECT_DOUBLE_EQ(pose.z(), 1.0);
+
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[0], 1.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[1], 0.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[2], 0.0);
+  EXPECT_DOUBLE_EQ(pose.rotation().quaternion()[3], 0.0);
+
+  EXPECT_DOUBLE_EQ(vel.x(), 0.1);
+  EXPECT_DOUBLE_EQ(vel.y(), 0.1);
+  EXPECT_NEAR(vel.z(), 0.0, 1e-6);
+   */
 }
 
 TEST(FactorGraphEstimatorLibSimple, IMUCallback) {

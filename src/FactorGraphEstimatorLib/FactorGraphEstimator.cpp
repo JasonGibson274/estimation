@@ -783,14 +783,11 @@ void FactorGraphEstimator::CallbackImu(const std::shared_ptr<sensor_msgs::Imu> i
     Pose3 result_state;
     Vector3 result_vel;
     latest_state_lck_.lock();
-    Pose3 current_state = Pose3(current_position_guess_);
-    Vector3 current_vel = Vector3(current_velocity_guess_);
-    latest_state_lck_.unlock();
-    PropagateImu(current_position_guess_, current_velocity_guess_, current_state, current_vel, accel, ang_rate, dt);
+
+    PropagateImu(current_position_guess_, current_velocity_guess_, preintegrator_imu_);
     position_update_ = true;
 
     // set the result to initial guess
-    latest_state_lck_.lock();
     current_pose_estimate_.header.stamp = ros::Time(last_imu_time_);
     current_pose_estimate_.pose.pose.position.x = current_position_guess_.x();
     current_pose_estimate_.pose.pose.position.y = current_position_guess_.y();
@@ -820,76 +817,12 @@ void FactorGraphEstimator::CallbackImu(const std::shared_ptr<sensor_msgs::Imu> i
  * @param dt time difference
  */
 // under preintegration lock
-void FactorGraphEstimator::PropagateImu(gtsam::Pose3& result_state, gtsam::Vector3& result_vel,
-                                         const gtsam::Pose3& current_state, const gtsam::Vector3& current_vel,
-                                         const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt,
-                                         bool use_gravity) {
-  double x = current_state.x();
-  double y = current_state.y();
-  double z = current_state.z();
-
-  double x_dot = current_vel[0];
-  double y_dot = current_vel[1];
-  double z_dot = current_vel[2];
-
-  double roll = current_state.rotation().rpy()[0];
-  double pitch = current_state.rotation().rpy()[1];
-  double yaw = current_state.rotation().rpy()[2];
-
-  double roll_dot = angular_vel[0];
-  double pitch_dot = angular_vel[1];
-  double yaw_dot = angular_vel[2];
-
-  if (imu_debug_) {
-    std::cout.precision(10);
-    std::cout << "===== prop =====" << std::endl;
-    std::cout << "dt = " << dt << std::endl;
-    std::cout << "ang rate before = " << roll_dot << ", " << pitch_dot << ", " << yaw_dot << std::endl;
-    std::cout << "acc beore = " << acc[0] << ", " << acc[1] << ", " << acc[2] << std::endl;
-    std::cout << "=====" << std::endl;
-    std::cout << "pos before = " << x << ", " << y << ", " << z << std::endl;
-    std::cout << "rpy before = " << roll << ", " << pitch << ", " << yaw << std::endl;
-    std::cout << "vel before = " << x_dot << ", " << y_dot << ", " << z_dot << std::endl;
-  }
-
-  //Update velocity
-  double c_phi, c_theta, c_psi, s_phi, s_theta, s_psi;
-  double ux, uy, uz;
-  c_phi = cosf(roll);
-  c_theta = cosf(pitch);
-  c_psi = cosf(yaw);
-  s_phi = sinf(roll);
-  s_theta = sinf(pitch);
-  s_psi = sinf(yaw);
-  ux = acc[0] * dt;
-  uy = acc[1] * dt;
-  uz = acc[2] * dt;
-
-  double new_x_dot = x_dot + (c_theta * c_psi) * ux + (s_phi * s_theta * c_psi - c_phi * s_psi) * uy
-                 + (c_phi * s_theta * c_psi + s_phi * s_psi) * uz;
-  double new_y_dot = y_dot + (c_theta * s_psi) * ux + (s_phi * s_theta * s_psi + c_phi * c_psi) * uy
-                 + (c_phi * s_theta * s_psi - s_phi * c_psi) * uz;
-  double new_z_dot = z_dot + (-s_theta) * ux + (c_theta * s_phi) * uy + (c_theta * c_phi) * uz
-          - (use_gravity ? (GRAVITY * dt) : 0.0);
-
-  result_vel = gtsam::Vector3(new_x_dot, new_y_dot, new_z_dot);
-
-  //position update
-  double result_x = x + (result_vel[0] + x_dot) / 2 * dt;
-  double result_y = y + (result_vel[1] + y_dot) / 2 * dt;
-  double result_z = z + (result_vel[2] + z_dot) / 2 * dt;
-
-  //Update the euler angles
-  // overflow of the values are handled by the gtsam constructor
-  double r_result, p_result, y_result;
-  r_result = roll + (roll_dot + (s_phi * s_theta / c_theta) * pitch_dot + (c_phi * s_theta / c_theta) * yaw_dot) * dt;
-  p_result = pitch + (c_phi * pitch_dot - s_phi * yaw_dot) * dt;
-  y_result = yaw + (s_phi / c_theta * pitch_dot + c_phi / c_theta * yaw_dot) * dt;
-
-  // apply the update
-  // the ordering is correct for gtsam
-  result_state = Pose3(Rot3::Ypr(y_result, p_result, r_result),
-                                  Point3(result_x, result_y, result_z));
+void FactorGraphEstimator::PropagateImu(gtsam::Pose3& pose, gtsam::Vector3& vel,
+                                        gtsam::PreintegratedImuMeasurements& preintegrator) {
+  gtsam::NavState input(pose.rotation(), pose.translation(),vel);
+  gtsam::NavState result = preintegrator.predict(input, current_bias_guess_);
+  pose = result.pose();
+  vel = result.v();
 }
 
 /**

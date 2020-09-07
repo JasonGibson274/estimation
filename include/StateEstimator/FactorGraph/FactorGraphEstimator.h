@@ -173,9 +173,7 @@ class FactorGraphEstimator {
   gtsam::noiseModel::Isotropic::shared_ptr getSmartProjectionNoise() {return smart_default_noise_;}
 
 
-  virtual void PropagateImu(gtsam::Pose3& result_state, gtsam::Vector3& result_vel,
-                            const gtsam::Pose3& current_state, const gtsam::Vector3& current_vel,
-                            const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt, bool use_gravity=true);
+  virtual void PropagateImu(gtsam::Pose3& pose, gtsam::Vector3& vel, gtsam::PreintegratedImuMeasurements& preintegrator);
   // methods for adding specific factors
   virtual void AddPoseFactor();
   virtual void AddImuFactor();
