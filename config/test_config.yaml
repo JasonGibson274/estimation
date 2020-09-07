@@ -14,7 +14,7 @@ factorGraphEstimator:
     # general
     imuDebug: false
     useImuFactor: true
-    useImuBias: false
+    useImuBias: true
     imuBiasIncr: 3
     invertX: false
     invertY: false
@@ -40,6 +40,8 @@ factorGraphEstimator:
   cameraConfig:
     # sets the names of the cameras to be registered
     cameraNames: [left, right]
+
+    pairingThreshold: 0.02
 
     left:
       # fx, fy, s, u0, v0
@@ -81,9 +83,7 @@ factorGraphEstimator:
 
   projectionFactorParams:
     useProjectionFactor: false
-    reassignGateIds: true
     defaultPixelNoise: 60.0
-    pairingThreshold: 0.02 # allowed time stamp difference
     gateDistThreshold: 10.0 #maximum distance between two gates allowed to reassign ids
 
     # list of valid types of objects
@@ -111,7 +111,7 @@ factorGraphEstimator:
     initial_bias_noise: 0.1
 
   smartPoseProjectionFactors:
-    useSmartPoseProjectionFactor: false
+    useSmartPoseProjectionFactor: true
     landmarkDistanceThreshold: -1
     useDegenerateSolutions: false
     dynamicOutlierRejectionThreshold: -1

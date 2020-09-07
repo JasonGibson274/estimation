@@ -1,5 +1,7 @@
 SubDirList(SUBDIRS ${CMAKE_CURRENT_SOURCE_DIR})
 
+message(${CMAKE_BINARY_DIR}/devel/include)
+include_directories(${CMAKE_BINARY_DIR}/devel/include)
 
 FOREACH(subdir ${SUBDIRS})
   ADD_SUBDIRECTORY(${subdir})

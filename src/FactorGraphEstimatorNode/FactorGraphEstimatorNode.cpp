@@ -3,6 +3,7 @@
 //
 
 #include <ros/ros.h>
+#include <StateEstimator/FactorGraph/FactorGraphEstimator.h>
 
 int main(int argc, char** argv) {
 

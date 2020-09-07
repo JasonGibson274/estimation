@@ -15,8 +15,8 @@ namespace estimator {
   using symbol_shorthand::B; // robot IMU/Gyro bias
   using symbol_shorthand::G; // transform to the GPS
   using symbol_shorthand::C; // transform to the cameras
-  using symbol_shorthand::L; // Point3 of a landmark that is being tracked
-  using symbol_shorthand::A; // variables that correspond to an aruco marker
+  using symbol_shorthand::L; // Point3 of a landmark that is being tracked with prior
+  using symbol_shorthand::A; // variables that correspond to an aruco marker, prior optional
 
 FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
 
@@ -27,6 +27,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
   YAML::Node config = YAML::LoadFile(config_file);
 
   current_state_guess_ = std::make_shared<gtsam::Values>();
+  history_ = std::make_shared<gtsam::Values>();
   current_incremental_graph_ = std::make_shared<gtsam::NonlinearFactorGraph>();
 
   if (config["factorGraphEstimator"]) {
@@ -68,11 +69,11 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
       isam_parameters_.enableDetailedResults = true;
       isam_parameters_.evaluateNonlinearError = true;
     }
-    std::string optimzation_method = estimation_utils::get<std::string>("optimizer", isam_config, std::string("GN"));
-    if(optimzation_method == "DL") {
+    std::string optimization_method = estimation_utils::get<std::string>("optimizer", isam_config, std::string("GN"));
+    if(optimization_method == "DL") {
       YAML::Node dl_config = isam_config["isamParametersDL"];
       gtsam::ISAM2DoglegParams optimizationParams;
-      optimizationParams.verbose = estimation_utils::get<bool>("verbose", dl_config, false);
+      optimizationParams.verbose = debug_;
       optimizationParams.wildfireThreshold = estimation_utils::get<double>("wildfireThreshold", dl_config, 1e-5);
       optimizationParams.initialDelta = estimation_utils::get<double>("initialDelta", dl_config, 1.0);
       std::string adaptationMode = estimation_utils::get<std::string>("trustRegionAdaptionMode", dl_config, std::string("oneStep"));
@@ -90,8 +91,8 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
       isam_parameters_.optimizationParams = optimizationParams;
 
     } else {
-      if (optimzation_method != "GN") {
-        std::cout << "WARNING: optimization method " << optimzation_method << " not valid of set {GN, DL}\n"
+      if (optimization_method != "GN") {
+        std::cout << "WARNING: optimization method " << optimization_method << " not valid of set {GN, DL}\n"
                                                                               "using GaussNewton" << std::endl;
       }
       gtsam::ISAM2GaussNewtonParams optimizationParams;
@@ -99,6 +100,9 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
       isam_parameters_.optimizationParams = optimizationParams;
     }
     isam_parameters_.print();
+  } else {
+    std::cerr << "cannot find isamParameters, using all defaults" << std::endl;
+    exit(1);
   }
   isam_ = ISAM2(isam_parameters_);
 
@@ -106,7 +110,6 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     YAML::Node camera_config = config["cameraConfig"];
 
     pairing_threshold_ = estimation_utils::get<double>("pairingThreshold", camera_config, 0.1);
-    double camera_scale_factor = estimation_utils::get<double>("scaleCameraMatricies", camera_config, 1.0);
 
     // load cameras
     std::vector<std::string> camera_names = estimation_utils::get<std::vector<std::string>>("cameraNames", camera_config, {});
@@ -130,28 +133,29 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
       std::vector<double> K = estimation_utils::get<std::vector<double>>("K", camera_config[camera_name],
                                                                    {0.0, 0.0, 0.0, 1.0, 0.0});
 
-      cam_info->K[0] = K[0] / camera_scale_factor;
-      cam_info->K[4] = K[1] / camera_scale_factor;
+      cam_info->K[0] = K[0];
+      cam_info->K[4] = K[1];
       // TODO check
       //cam_info-> = K[2] / camera_scale_factor;
-      cam_info->K[2] = K[3] / camera_scale_factor;
-      cam_info->K[5] = K[4] / camera_scale_factor;
+      cam_info->K[2] = K[3];
+      cam_info->K[5] = K[4];
 
       RegisterCamera(camera_name, translation, rotation, cam_info);
 
     }
+  } else {
+    std::cout << "cannot find any camera configuration exiting" << std::endl;
+    exit(-1);
   }
 
+  /*
   if (config["projectionFactorParams"]) {
     YAML::Node camera_config = config["projectionFactorParams"];
     // camera
-    use_camera_factors_ = estimation_utils::get<bool>("useProjectionFactor", camera_config, false);
+    use_projection_factors_ = estimation_utils::get<bool>("useProjectionFactor", camera_config, false);
     double default_noise = estimation_utils::get<double>("defaultPixelNoise", camera_config, 10.0);
     default_camera_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
-    use_projection_constraints_ = estimation_utils::get<bool>("useProjectionConstraints", camera_config, false);
-    projection_constraint_noise_val_ = estimation_utils::get<bool>("projectionConstraintNoise", camera_config, 0.1);
 
-    projection_constraint_noise_ = gtsam::noiseModel::Constrained::All(3);
     projection_landmark_noise_ = noiseModel::Isotropic::Sigma(3, projection_constraint_noise_val_);
 
     std::vector<std::string> object_names = estimation_utils::get<std::vector<std::string>>("objects", camera_config, {});
@@ -186,6 +190,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     }
 
   }
+   */
 
   if (config["arucoFactorParams"]) {
     YAML::Node aruco_config = config["arucoFactorParams"];
@@ -206,9 +211,6 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
                                                                               {0.25, 0.25, 0.25, 0.25, 0.25, 0.25});
     aruco_noise
         << aruco_noise_arr[0], aruco_noise_arr[1], aruco_noise_arr[2], aruco_noise_arr[3], aruco_noise_arr[4], aruco_noise_arr[5];
-    if(debug_) {
-      std::cout << "aruco noise = " << aruco_noise.transpose() << std::endl;
-    }
     double aruco_camera_noise = estimation_utils::get<double>("projectionPixelNoise", aruco_config, 10.0);
     aruco_camera_noise_ = noiseModel::Isotropic::Sigma(2, aruco_camera_noise);
 
@@ -286,18 +288,12 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     std::vector<double>
         odom_vel_arr = estimation_utils::get<std::vector<double>>("poseVelNoise", pose_config, {0.3, 0.3, 0.3});
     Vector3 odom_vel_noise = Vector3(odom_vel_arr[0], odom_vel_arr[1], odom_vel_arr[2]);
-    if(debug_) {
-      std::cout << "odom vel noise = " << odom_vel_noise.transpose() << std::endl;
-    }
     odometry_vel_noise_ = noiseModel::Diagonal::Sigmas(odom_vel_noise);
     Vector6 pose_noise;
     std::vector<double> pose_noise_arr = estimation_utils::get<std::vector<double>>("poseNoise", pose_config,
                                                                               {0.25, 0.25, 0.25, 0.25, 0.25, 0.25});
     pose_noise
         << pose_noise_arr[0], pose_noise_arr[1], pose_noise_arr[2], pose_noise_arr[3], pose_noise_arr[4], pose_noise_arr[5];
-    if(debug_) {
-      std::cout << "pose noise = " << pose_noise.transpose() << std::endl;
-    }
     odometry_pose_noise_ = noiseModel::Diagonal::Sigmas(pose_noise);
   }
 
@@ -319,13 +315,6 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
 
     double default_noise = estimation_utils::get<double>("defaultPixelNoise", smart_pose_config, 10.0);
     smart_default_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
-    std::vector<std::string> object_names = estimation_utils::get<std::vector<std::string>>("objects", smart_pose_config, {});
-    for (auto &object_name : object_names) {
-      double noise = estimation_utils::get<double>(object_name + "_noise", smart_pose_config["objectList"], default_noise);
-      gtsam::noiseModel::Diagonal::shared_ptr
-              noise_model = noiseModel::Isotropic::Sigma(2, noise);  // one pixel in u and v
-      smart_object_noises_.insert(std::pair<std::string, gtsam::noiseModel::Diagonal::shared_ptr>(object_name, noise_model));
-    }
   }
 
   if(debug_) {
@@ -333,7 +322,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
             << "Using IMU Factor: " << (use_imu_factors_ ? "true" : "false") << "\n"
             << "Using IMU Bias Factor: " << (use_imu_bias_ ? "true" : "false") << "\n"
             << "Using pose Factor: " << (use_pose_factors_ ? "true" : "false") << "\n"
-            << "Using projection Factor: " << (use_camera_factors_ ? "true" : "false") << "\n"
+            << "Using projection Factor: " << (use_projection_factors_ ? "true" : "false") << "\n"
             << "Using aruco Factor: " << (use_aruco_factors_ ? "true" : "false") << "\n"
             << "Using smart Factor: " << (use_smart_pose_projection_factor_ ? "true" : "false") << "\n"
             << "\nStarting at state: " << prior_config_.state << "\n\n"
@@ -355,32 +344,21 @@ void FactorGraphEstimator::AddPriors() {
 
   // insert initial guesses of state
   current_state_guess_->insert(X(index_), current_position_guess_);
-  current_state_guess_->insert(V(index_),
-                               current_velocity_guess_);
+  current_state_guess_->insert(V(index_), current_velocity_guess_);
 
   if (use_imu_factors_) {
-    current_state_guess_->insert(B(bias_index_),
-                                 current_bias_guess_);
+    current_state_guess_->insert(B(bias_index_), current_bias_guess_);
   }
 
   // Assemble prior noise model and add it the graph.
   std::vector<double> pose_noise_arr = prior_config_.initial_pose_noise;
   noiseModel::Diagonal::shared_ptr pose_noise_model = noiseModel::Diagonal::Sigmas((Vector(6)
           << pose_noise_arr[0], pose_noise_arr[1], pose_noise_arr[2], pose_noise_arr[3], pose_noise_arr[4], pose_noise_arr[5]).finished()); // rad,rad,rad,m, m, m
-  if (debug_) {
-    std::cout << "prior pose noise = " << pose_noise_model->sigmas().transpose() << std::endl;
-  }
 
   noiseModel::Diagonal::shared_ptr
           velocity_noise_model = noiseModel::Isotropic::Sigma(3, prior_config_.initial_vel_noise);
-  if (debug_) {
-    std::cout << "prior vel noise = " << velocity_noise_model->sigmas().transpose() << std::endl;
-  }
 
   noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Isotropic::Sigma(6, prior_config_.initial_bias_noise);
-  if (debug_) {
-    std::cout << "bias_noise_model prior = " << bias_noise_model->sigmas().transpose() << std::endl;
-  }
 
   // priors match initial guess
   current_incremental_graph_->add(PriorFactor<Pose3>(X(index_),
@@ -433,7 +411,6 @@ void FactorGraphEstimator::TimingCallback(const double timestamp) {
     index_++;
     time_map_.insert(std::make_pair(index_, timestamp));
   } else {
-    preintegrator_lck_.unlock();
     std::cout << "WARNING: no position update before timing callback, not creating a state" << std::endl;
   }
 }
@@ -492,9 +469,11 @@ bool FactorGraphEstimator::RunOptimize() {
   // stores the current state of the local graph so that we can continue to build a local graph while optimizing
   int temp_index = index_;
   int temp_bias_index = bias_index_;
+  /*
   if(debug_) {
     std::cout << "\nstarting optimization with indexes up to = " << temp_index << std::endl;
   }
+   */
 
   std::shared_ptr<gtsam::NonlinearFactorGraph> graph_copy = current_incremental_graph_;
   std::shared_ptr<gtsam::Values> guesses_copy = current_state_guess_;
@@ -510,34 +489,36 @@ bool FactorGraphEstimator::RunOptimize() {
   smart_detections_lck_.lock();
 
   while(!smart_detections_queue_.empty()) {
-    smart_detection detection = smart_detections_queue_.front();
+    SmartDetection detection = smart_detections_queue_.front();
+    /*
     if(debug_) {
       std::cout << "adding detection on camera: " << detection.header.camera << " with id: "
               << detection.header.id << " and type: " << detection.header.type
               << "\nat state index " << detection.state_index << " of " << detection.detection << std::endl;
     }
+     */
     // TODO should also add camera key detection came from
     id_to_smart_landmarks_[detection.header]->add(detection.detection, X(detection.state_index));
     smart_detections_queue_.pop_front();
   }
   smart_detections_lck_.unlock();
 
-  history_.insert(*guesses_copy);
+  history_->insert(*guesses_copy);
 
+  /*
   if (debug_) {
     std::cout << "======= BEFORE error ======\n";
     PrintValues(guesses_copy, "guess state guesses");
     std::cout << "\nincremental graph with error" << std::endl;
     graph_copy->printErrors(history_);
-    /*
     for(auto it = id_to_smart_landmarks_.begin(); it != id_to_smart_landmarks_.end(); it++) {
       if(it->second->error(history_) > 0) {
         it->second->print();
         std::cout << "error: " << it->second->error(history_) << std::endl;
       }
     }
-     */
   }
+  */
 
   auto start = std::chrono::steady_clock::now();
 
@@ -564,7 +545,7 @@ bool FactorGraphEstimator::RunOptimize() {
     optimization_stats_.error_after = -1;
   }
 
-  history_.update(optimized_values);
+  history_->update(optimized_values);
 
   /*
   if(debug_) {
@@ -592,7 +573,7 @@ bool FactorGraphEstimator::RunOptimize() {
   landmark_locations_.clear();
   for(auto it = landmark_to_id_map_.begin(); it != landmark_to_id_map_.end(); it++) {
     Point3 landmark = optimized_values.at<Point3>(L(it->second));
-    //print_projection(temp_index, landmark, camera_map["left_right"], Point2(0,0));
+    //print_projection(temp_index, landmark, camera_map_["left_right"], Point2(0,0));
     Landmark new_landmark;
     new_landmark.point.x = landmark.x();
     new_landmark.point.y = landmark.y();
@@ -665,9 +646,10 @@ bool FactorGraphEstimator::RunOptimize() {
                                             optimization_time/optimization_iterations;
   optimization_stats_.get_landmarks_time = optimization_time;
 
+  /*
   if(debug_) {
     std::cout << optimization_stats_ << std::endl;
-  }
+  }*/
 
   // set the guesses of state to the correct output, update to account for changes since last optimization
 
@@ -681,11 +663,13 @@ bool FactorGraphEstimator::RunOptimize() {
   if (use_imu_bias_ && use_imu_factors_) {
     current_bias_guess_ = optimized_values.at<imuBias::ConstantBias>(B(temp_bias_index));
   }
+  /*
   if(debug_) {
     std::cout << "\ntemp_index = " << temp_index << "\n"
               << "optimized Position\n" << optimized_pose << "\n"
               << "optimized Velocity: " << optimized_vel.transpose() << std::endl;
   }
+   */
 
   graph_lck_guard.lock();
   std::lock_guard<std::mutex> preintegration_lck(preintegrator_lck_);
@@ -712,10 +696,12 @@ bool FactorGraphEstimator::RunOptimize() {
   current_position_guess_ = result.pose();
   current_velocity_guess_ = result.v();
 
+  /*
   if(debug_) {
     std::cout << "\ncurrent position after fix\n" << current_position_guess_ << "\n";
     std::cout << "\ncurrent velocity after fix = " << current_velocity_guess_.transpose() << "\n\n\n" << std::endl;
   }
+   */
 
   graph_lck_guard.unlock();
 
@@ -740,9 +726,11 @@ bool FactorGraphEstimator::RunOptimize() {
     }
   }
 
+  /*
   if(debug_) {
     std::cout << "===========================" << std::endl;
   }
+   */
 
   return true;
 }
@@ -816,6 +804,10 @@ void FactorGraphEstimator::CallbackImu(const std::shared_ptr<sensor_msgs::Imu> i
     current_pose_estimate_.twist.twist.linear.x = current_velocity_guess_[0];
     current_pose_estimate_.twist.twist.linear.y = current_velocity_guess_[1];
     current_pose_estimate_.twist.twist.linear.z = current_velocity_guess_[2];
+
+    current_pose_estimate_.twist.twist.angular.x = ang_rate.x();
+    current_pose_estimate_.twist.twist.angular.y = ang_rate.y();
+    current_pose_estimate_.twist.twist.angular.z = ang_rate.z();
     latest_state_lck_.unlock();
   }
 }
@@ -968,12 +960,12 @@ void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimat
 
   TimingCallback(msg->header.stamp.toSec());
 
-  if (camera_map.find(msg->camera_name) == camera_map.end()) {
+  if (camera_map_.find(msg->camera_name) == camera_map_.end()) {
     std::cout << "WARNING aruco using invalid camera name " << msg->camera_name << " make sure to register a camera first"
               << std::endl;
     return;
   }
-  GtsamCamera camera = camera_map[msg->camera_name];
+  GtsamCamera camera = camera_map_[msg->camera_name];
   int image_index = FindCameraIndex(msg->header.stamp.toSec());
   // if there is some time delay in aruco, check to make sure we have the right image
   if(image_index == -1) {
@@ -1052,8 +1044,8 @@ void FactorGraphEstimator::AddProjectionPrior(std::shared_ptr<Landmark> msg) {
         Point3 other_position;
         if(current_state_guess_->exists(L(other_index))) {
           other_position = current_state_guess_->at<Point3>(L(other_index));
-        } else if(history_.exists(L(other_index))) {
-          other_position = history_.at<Point3>(L(other_index));
+        } else if(history_->exists(L(other_index))) {
+          other_position = history_->at<Point3>(L(other_index));
         } else {
           std::cout << "WARNING: cannot find match for landmark" << std::endl;
           continue;
@@ -1213,27 +1205,6 @@ nav_msgs::Odometry FactorGraphEstimator::LatestState(bool optimize) {
 }
 
 void FactorGraphEstimator::RegisterCamera(const std::string name,
-                                           const std::vector<double> translation,
-                                           const std::vector<double> rotation,
-                                           const std::vector<double> intrinsics) {
-  std::shared_ptr<gtsam::Point3> translation_gtsam =
-    std::make_shared<gtsam::Point3>(translation[0], translation[1], translation[2]);
-
-  std::shared_ptr<gtsam::Rot3> rotation_gtsam =
-    std::make_shared<gtsam::Rot3>(rotation[0], rotation[1], rotation[2],
-                                    rotation[3], rotation[4], rotation[5],
-                                    rotation[6], rotation[7], rotation[8]);
-  std::shared_ptr<sensor_msgs::CameraInfo> cam_info = std::make_shared<sensor_msgs::CameraInfo>();
-  cam_info->K[0] = intrinsics[0];
-  cam_info->K[4] = intrinsics[1];
-  //cam_info->s  = intrinsics[2];
-  cam_info->K[3] = intrinsics[3];
-  cam_info->K[5] = intrinsics[4];
-
-  RegisterCamera(name, translation_gtsam, rotation_gtsam, cam_info);
-}
-
-void FactorGraphEstimator::RegisterCamera(const std::string name,
                                            const std::shared_ptr<gtsam::Point3> translation,
                                            const std::shared_ptr<gtsam::Rot3> rotation,
                                            const std::shared_ptr<sensor_msgs::CameraInfo> camera_info) {
@@ -1246,20 +1217,12 @@ void FactorGraphEstimator::RegisterCamera(const std::string name,
   cam.k = boost::make_shared<gtsam::Cal3_S2>(camera_info->K[0],
                                              camera_info->K[4],
                                              0,
-                                             camera_info->K[3],
+                                             camera_info->K[2],
                                              camera_info->K[5]);
 
-  //Rot3 new_rot = Rot3::Ypr(0, -50 * DEG_TO_RAD , 0);
-  std::cout << "camera should be " << (*rotation).inverse() << std::endl;
-  std::cout << "rot mat = " << Rot3::Rx(M_PI) << std::endl;
-  Rot3 fixed_rotation =  Rot3::Rx(M_PI) * (*rotation).inverse();
-  cam.transform = Pose3(fixed_rotation, *translation);
+  cam.transform = Pose3(*rotation, *translation);
 
-
-  std::cout << "Registered camera: " << name << "\n";
-  cam.k->print();
-  std::cout << "\ntransform = " << cam.transform << std::endl;
-  camera_map.insert(std::pair<std::string, GtsamCamera>(name, cam));
+  camera_map_.insert(std::pair<std::string, GtsamCamera>(name, cam));
 }
 
 OptimizationStats FactorGraphEstimator::GetOptimizationStats() {
@@ -1280,6 +1243,7 @@ int FactorGraphEstimator::FindCameraIndex(double time) {
     << time_map_.rbegin()->second + pairing_threshold_ << " no correspondence found" << std::endl;
     return -1;
   }
+  // TODO check if it is in the map to begin with
   for(auto it = time_map_.rbegin(); it != time_map_.rend(); it++) {
     double dt = std::abs(it->second - time);
     if(dt < pairing_threshold_) {
@@ -1298,9 +1262,9 @@ void FactorGraphEstimator::PrintProjection(int image_index, Point3 location, Gts
   // TODO throws exception
   Pose3 position;
   bool print = false;
-  if(history_.exists(X(image_index))) {
+  if(history_->exists(X(image_index))) {
     print = true;
-    position = history_.at<Pose3>(X(image_index));
+    position = history_->at<Pose3>(X(image_index));
   }
   if(!print && current_state_guess_->exists(X(image_index))) {
     print = true;
@@ -1343,7 +1307,7 @@ void FactorGraphEstimator::SmartProjectionCallback(const std::shared_ptr<autoral
   TimingCallback(detections->header.stamp.toSec());
 
   // if there is no position updates this is unconstrained
-  if (camera_map.find(detections->header.frame_id) == camera_map.end()) {
+  if (camera_map_.find(detections->header.frame_id) == camera_map_.end()) {
     std::cout << "WARNING smart using invalid camera name " << detections->header.frame_id << " make sure to register a camera first"
               << std::endl;
     return;
@@ -1356,7 +1320,7 @@ void FactorGraphEstimator::SmartProjectionCallback(const std::shared_ptr<autoral
   }
 
   // New Landmark - Add a new Factor
-  GtsamCamera camera = camera_map[detections->header.frame_id];
+  GtsamCamera camera = camera_map_[detections->header.frame_id];
 
   for(autorally_estimation::CameraDetection detection : detections->detections) {
     DetectionHeader header;
@@ -1383,7 +1347,7 @@ void FactorGraphEstimator::SmartProjectionCallback(const std::shared_ptr<autoral
       current_incremental_graph_->push_back(smartFactor);
     }
     std::lock_guard<std::mutex> smart_detections_lck(smart_detections_lck_);
-    smart_detection smart_det;
+    SmartDetection smart_det;
     smart_det.detection = gtsam::Point2(detection.x, detection.y);
     smart_det.state_index = image_index;
     smart_det.header = header;
@@ -1391,23 +1355,25 @@ void FactorGraphEstimator::SmartProjectionCallback(const std::shared_ptr<autoral
   }
 }
 
-std::vector<nav_msgs::Odometry> FactorGraphEstimator::GetStateHistory() {
-  std::vector<nav_msgs::Odometry> result;
+// TODO pose array
+geometry_msgs::PoseArray FactorGraphEstimator::GetStateHistory() {
+  geometry_msgs::PoseArray result;
+  result.header.stamp = ros::Time(time_map_.rbegin()->second);
   for(int i = 0; i < index_; i++) {
-    if(history_.exists(X(i))) {
-      Pose3 other_position = history_.at<Pose3>(X(i));
-      nav_msgs::Odometry pose;
-      pose.pose.pose.position.x = other_position.x();
-      pose.pose.pose.position.y = other_position.y();
-      pose.pose.pose.position.z = other_position.z();
+    if(history_->exists(X(i))) {
+      Pose3 other_position = history_->at<Pose3>(X(i));
+      geometry_msgs::Pose pose;
+      pose.position.x = other_position.x();
+      pose.position.y = other_position.y();
+      pose.position.z = other_position.z();
 
       gtsam::Quaternion q = other_position.rotation().toQuaternion();
 
-      pose.pose.pose.orientation.w = q.w();
-      pose.pose.pose.orientation.x = q.x();
-      pose.pose.pose.orientation.y = q.y();
-      pose.pose.pose.orientation.z = q.z();
-      result.push_back(pose);
+      pose.orientation.w = q.w();
+      pose.orientation.x = q.x();
+      pose.orientation.y = q.y();
+      pose.orientation.z = q.z();
+      result.poses.push_back(pose);
     }
   }
   return result;

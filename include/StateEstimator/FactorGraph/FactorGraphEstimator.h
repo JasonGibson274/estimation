@@ -29,6 +29,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <geometry_msgs/PoseArray.h>
 #include <sensor_msgs/CameraInfo.h>
 
 #include <autorally_estimation/ArucoDetections.h>
@@ -73,7 +74,7 @@ bool operator <(const DetectionHeader& x, const DetectionHeader& y) {
   return x.camera+"_"+x.type+"_"+x.id <  y.camera+"_"+y.type+"_"+y.id;
 }
 
-struct smart_detection {
+struct SmartDetection {
   gtsam::Point2 detection;
   int state_index;
   DetectionHeader header;
@@ -130,33 +131,69 @@ class FactorGraphEstimator {
 
   std::map<std::string, std::vector<geometry_msgs::PoseWithCovarianceStamped>> GetSmartLocations();
 
-  void RegisterCamera(const std::string name,
-                       const std::vector<double> translation,
-                       const std::vector<double> rotation,
-                       const std::vector<double> intrinsics);
-
-  std::vector<nav_msgs::Odometry> GetStateHistory();
+  geometry_msgs::PoseArray GetStateHistory();
 
   void AddArucoPrior(std::vector<double> position, int id);
 
- private:
-  virtual void RegisterCamera(const std::string name,
+  // general getters
+  std::shared_ptr<gtsam::Values> getCurrentStateGuess() {return current_state_guess_;}
+  std::shared_ptr<gtsam::Values> getHistory() {return history_;}
+  std::shared_ptr<gtsam::NonlinearFactorGraph> getCurrentIncrementalGraph() {return current_incremental_graph_;}
+  bool getDebugMode() {return debug_;}
+  int getCurrentIndex() {return index_;}
+  std::map<int, double> getTimeMap() {return time_map_;}
+  bool getPositionUpdate() {return position_update_;}
+  // prior getters
+  PriorConfig getPriorConfig() {return prior_config_;}
+  gtsam::ISAM2Params getISAMParams() {return isam_parameters_;}
+  // camera getters
+  double getPairingThreshold() {return pairing_threshold_;}
+  std::map<std::string, GtsamCamera> getCameraMap() {return camera_map_;}
+  // projection getters
+  // aruco getters
+  // imu getters
+  bool getVerboseImu() {return imu_debug_;}
+  bool getUseImuFactors() {return use_imu_factors_;}
+  bool getUseImuBias() {return use_imu_bias_;}
+  std::array<bool, 3> getInvertImuStatus() {
+    return {invert_x_, invert_y_, invert_z_};
+  }
+  int getImuBiasIncr() {return imu_bias_incr_;}
+  int getImuBiasIndex() {return bias_index_;}
+  gtsam::noiseModel::Diagonal::shared_ptr getImuBiasNoise() {return bias_noise_;}
+  gtsam::PreintegratedImuMeasurements getImuMeasurementsObject() {return preintegrator_imu_;}
+  double getLastImuTime() {return last_imu_time_;}
+  // pose factor
+  bool getUsePoseFactor() {return use_pose_factors_;}
+  gtsam::noiseModel::Diagonal::shared_ptr getOdometryPoseNoise() {return odometry_pose_noise_;}
+  gtsam::noiseModel::Diagonal::shared_ptr getOdometryVelNoise() {return odometry_vel_noise_;}
+  // smart projection factor params
+  bool getUseSmartProjectionFactor() {return use_smart_pose_projection_factor_;}
+  gtsam::SmartProjectionParams getSmartProjectionParams() {return projection_params_;}
+  gtsam::noiseModel::Isotropic::shared_ptr getSmartProjectionNoise() {return smart_default_noise_;}
+
+
+  virtual void PropagateImu(gtsam::Pose3& result_state, gtsam::Vector3& result_vel,
+                            const gtsam::Pose3& current_state, const gtsam::Vector3& current_vel,
+                            const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt, bool use_gravity=true);
+  // methods for adding specific factors
+  virtual void AddPoseFactor();
+  virtual void AddImuFactor();
+  virtual void PrintValues(std::shared_ptr<gtsam::Values> values, std::string prefix);
+
+  void RegisterCamera(const std::string name,
                                const std::shared_ptr<gtsam::Point3> translation,
                                const std::shared_ptr<gtsam::Rot3> rotation,
                                const std::shared_ptr<sensor_msgs::CameraInfo> camera_info);
-  virtual void AddPoseFactor();
-  virtual void AddPriors();
-  virtual void AddImuFactor();
-  void PropagateImu(gtsam::Pose3& result_state, gtsam::Vector3& result_vel,
-                     const gtsam::Pose3& current_state, const gtsam::Vector3& current_vel,
-                     const gtsam::Vector3& acc, const gtsam::Vector3& angular_vel, const double dt, bool use_gravity=true);
+  void AddPriors();
   int FindCameraIndex(double time);
   void PrintProjection(int image_index, gtsam::Point3 position, GtsamCamera camera, gtsam::Point2 detections_coords);
-  void PrintValues(std::shared_ptr<gtsam::Values> values, std::string prefix);
 
+protected:
   // ========== GENERIC VARS =======
   bool debug_ = true;
   bool full_history_debug_ = false; // TODO config
+  int history_limit = 100; // TODO implement
   // if any thing has updated the estimate of position
   bool position_update_ = false;
   // current estimate of the position of the drone
@@ -169,7 +206,7 @@ class FactorGraphEstimator {
   bool use_pose_factors_ = true;
   bool use_range_factors_ = false;
   bool use_imu_factors_ = true;
-  bool use_camera_factors_ = true;
+  bool use_projection_factors_ = true;
   // even is disabled will create a state in the FG
   bool use_aruco_factors_ = true;
 
@@ -202,7 +239,6 @@ class FactorGraphEstimator {
   std::mutex smart_locations_lck_; // lock to control smart detection locations
   std::mutex timing_lck_; // lock to prevent duplicate timing calls
 
-
   // Current estimate of the state to be passed into factor graph
   gtsam::Pose3 current_position_guess_;
   gtsam::Vector3 current_velocity_guess_;
@@ -221,13 +257,13 @@ class FactorGraphEstimator {
   std::shared_ptr<gtsam::Values> current_state_guess_;
 
   // entire history of the state, only enabled in debug mode
-  gtsam::Values history_;
+  std::shared_ptr<gtsam::Values> history_;
 
   // ========== IMU ===========================
   std::vector<gtsam::ImuFactor> imu_queue_;
   gtsam::PreintegratedImuMeasurements preintegrator_imu_;
   bool use_imu_prop_ = true;
-  bool imu_debug_ = false;
+  bool imu_debug_ = false; // TODO rename
   double last_imu_time_ = -1;
   int bias_index_ = 0;
   int imu_bias_incr_ = 1;
@@ -267,7 +303,7 @@ class FactorGraphEstimator {
   // will turn off projection constraints
   bool use_projection_constraints_ = false;
   // camera name to camera parameters
-  std::map<std::string, GtsamCamera> camera_map;
+  std::map<std::string, GtsamCamera> camera_map_;
   // L index, and actual landmark
   std::map<int, Landmark> landmark_locations_;
   // TODO change to pair of id and type
@@ -294,11 +330,11 @@ class FactorGraphEstimator {
   bool use_smart_pose_projection_factor_ = false;
   // header (id and type) to factor
   std::map<DetectionHeader, gtsam::SmartProjectionPoseFactor<gtsam::Cal3_S2>::shared_ptr> id_to_smart_landmarks_;
-  std::list<smart_detection> smart_detections_queue_;
+  std::list<SmartDetection> smart_detections_queue_;
   gtsam::SmartProjectionParams projection_params_;
   // type -> resulting point
   std::map<std::string, std::vector<geometry_msgs::PoseWithCovarianceStamped>> smart_locations_;
-  gtsam::noiseModel::Diagonal::shared_ptr smart_default_noise_;
+  gtsam::noiseModel::Isotropic::shared_ptr smart_default_noise_;
   std::map<std::string, gtsam::noiseModel::Diagonal::shared_ptr> smart_object_noises_;
 };
 } // estimator

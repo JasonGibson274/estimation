@@ -1,3 +1,4 @@
+# create the
 if(BUILD_TESTS)
   set(TEST_CONFIG_FOLDER "${PROJECT_SOURCE_DIR}/config")
   # Create header file pointing to test config location
@@ -6,32 +7,21 @@ if(BUILD_TESTS)
   message(STATUS "Generated ${TEST_CONFIG_HEADER_FILE}")
   # Add the generated header file to list of includes
   include_directories(${PROJECT_BINARY_DIR}/include)
-  message("")
 endif()
 
 set(PLANT_TARGET_NAME factor_graph_simple_tests)
 
-#message(${GTSAM_LIBRARIES})
-#message(${NEEDED_LIBRARIES})
+add_executable(factor_graph_simple_test
+        ../test_main.cpp
+        FactorGraphSimpleTests.cpp)
 
-set(GTEST_LIBRARIES gtest gmock gtest_main)
-# set(TARGETS autorally_roboust_cost_test autorally_standard_cost_test
-#     cartpole_quadratic_cost_test double_integrator_circle_cost_test
-#     quadrotor_quadratic_cost_test)
+target_link_libraries(factor_graph_simple_test gtest
+        gmock
+        gtest_main
+        FactorGraphEstimatorLib
+        ${GTSAM_LIBRARIES}
+        ${NEEDED_LIBRARIES})
 
-file(GLOB TARGET_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.cpp)
-
-foreach(T_FILE IN LISTS TARGET_SRCS)
-  get_filename_component(T_NAME ${T_FILE} NAME_WE)
-  add_executable(${T_NAME} ../test_main.cpp ${T_FILE})
-  target_link_libraries(${T_NAME}
-          ${GTEST_LIBRARIES}
-          FactorGraphEstimatorLib
-          ${GTSAM_LIBRARIES}
-          ${NEEDED_LIBRARIES}
-          cnpy)
-  #  add_test(NAME ${T_NAME} COMMAND ${T_NAME})
-  gtest_discover_tests(${T_NAME})
-  set_target_properties(${T_NAME} PROPERTIES FOLDER test)
-endforeach()
+gtest_discover_tests(factor_graph_simple_test)
+set_target_properties(factor_graph_simple_test PROPERTIES FOLDER test)
 
