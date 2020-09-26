@@ -1,6 +1,4 @@
-std_msgs/Int32 id
-
-geometry_msgs/Pose pose
+int32 id
 
 float64 size
 

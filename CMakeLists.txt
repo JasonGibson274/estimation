@@ -44,7 +44,9 @@ elseif()
 endif()
 
 find_package(yaml-cpp REQUIRED)
-include_directories(SYSTEM ${YAML_CPP_INCLUDE_DIR})
+find_package(GeographicLib REQUIRED)
+find_package(OpenCV REQUIRED)
+include_directories(SYSTEM ${YAML_CPP_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS})
 
 # Find GTSAM
 find_package(GTSAM)
@@ -80,6 +82,7 @@ find_package(catkin REQUIRED COMPONENTS
         nav_msgs
         image_transport
         tf
+        cv_bridge
         cmake_modules
 )
 
