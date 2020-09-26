@@ -317,6 +317,28 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
     smart_default_noise_ = noiseModel::Isotropic::Sigma(2, default_noise);  // one pixel in u and v
   }
 
+  if(config["gpsFactorParams"]) {
+    YAML::Node gps_config = config["gpsFactorParams"];
+
+    use_gps_factor_ = estimation_utils::get<bool>("useGpsFactor", gps_config, true);
+    std::vector<double> gps_to_imu = estimation_utils::get<std::vector<double>>
+            ("gpsToImu", gps_config, {0.0, 0.0, 0.0});
+    imu_to_gps_ = Pose3(Rot3(), Point3(gps_to_imu[0], gps_to_imu[1], gps_to_imu[2]));
+
+    std::vector<double> gps_to_imu_noise_arr = estimation_utils::get<std::vector<double>>
+            ("gpsToImuNoise", gps_config, {0.01, 0.01, 0.01, 0.03, 0.03, 0.03});
+    Vector6 gps_to_imu_noise;
+    gps_to_imu_noise << gps_to_imu_noise_arr[0], gps_to_imu_noise_arr[1], gps_to_imu_noise_arr[2], gps_to_imu_noise_arr[3],
+                gps_to_imu_noise_arr[4], gps_to_imu_noise_arr[5];
+
+    imu_to_gps_noise_ = noiseModel::Diagonal::Sigmas(gps_to_imu_noise);
+
+
+    max_gps_error_ = estimation_utils::get<double>("maxGpsError", gps_config, 10.0);
+
+    use_fixed_origin_ = estimation_utils::get<bool>("useFixedOrigin", gps_config, false);
+  }
+
   if(debug_) {
     std::cout << "\nFinished Init\n"
             << "Using IMU Factor: " << (use_imu_factors_ ? "true" : "false") << "\n"
@@ -325,6 +347,7 @@ FactorGraphEstimator::FactorGraphEstimator(const std::string &config_file) {
             << "Using projection Factor: " << (use_projection_factors_ ? "true" : "false") << "\n"
             << "Using aruco Factor: " << (use_aruco_factors_ ? "true" : "false") << "\n"
             << "Using smart Factor: " << (use_smart_pose_projection_factor_ ? "true" : "false") << "\n"
+            << "Using GPS Factor: " << (use_gps_factor_ ? "true" : "false") << "\n"
             << "\nStarting at state: " << prior_config_.state << "\n\n"
             << std::endl;
   }
@@ -528,9 +551,11 @@ bool FactorGraphEstimator::RunOptimize() {
   Values optimized_values = isam_.calculateEstimate();
   auto temp_end = std::chrono::steady_clock::now();
   std::chrono::duration<double> temp_diff = temp_end - temp_start;
+  /*
   if(debug_) {
     std::cout << "time to calculate estimate: " << temp_diff.count() << std::endl;
   }
+   */
   // print out optimizations statistics
   optimization_stats_.variables_reeliminated = results.variablesReeliminated;
   optimization_stats_.variables_relinearized = results.variablesRelinearized;
@@ -856,9 +881,11 @@ void FactorGraphEstimator::AddImuFactor() {
   }
   lock_guard<mutex> preintegrator_lck(preintegrator_lck_);
   // motion model of position and velocity variables
+  /*
   if(debug_) {
     std::cout << "creating IMU index at = " << index_ << " to " << index_ + 1 << std::endl;
   }
+   */
 
   if(use_imu_prop_) {
     lock_guard<mutex> latest_state_lck(latest_state_lck_);
@@ -885,6 +912,58 @@ void FactorGraphEstimator::AddImuFactor() {
   position_update_ = false;
 }
 
+
+void FactorGraphEstimator::GpsCallback(const std::shared_ptr<sensor_msgs::NavSatFix> msg) {
+  if(!use_gps_factor_) {
+    return;
+  }
+
+  // timing callback to create a state for the current GPS measurement
+  TimingCallback(msg->header.stamp.toSec());
+
+  double E,N,U; // coordinates
+
+  latest_state_lck_.lock();
+  Pose3 x = current_state_guess_->at<Pose3>(X(index_));
+  latest_state_lck_.unlock();
+
+  if(first_fix_ && !use_fixed_origin_) {
+    // convert to cartesian
+    enu_.Forward(msg->latitude, msg->longitude, msg->altitude, E, N, U);
+    // apply the offset of the current state
+    // TODO not right, ignores rotation
+    Point3 transformed = x.transformFrom(imu_to_gps_.translation());
+    E = transformed.x();
+    N = transformed.y();
+    U = transformed.z();
+    // convert back to lon, lat, alt for origin
+    double lon, lat, alt;
+    enu_.Reverse(E, N, U, lat, lon, alt);
+
+    enu_.Reset(lat, lon, alt);
+  } else {
+    enu_.Forward(msg->latitude, msg->longitude, msg->altitude, E, N, U);
+  }
+
+  double dist = std::sqrt(pow(x.x() - E, 2) + pow(x.y() - N, 2));
+  if(dist < max_gps_error_) {
+
+    // TODO should this be constant?
+    SharedDiagonal gps_noise = noiseModel::Diagonal::Sigmas(Vector3(msg->position_covariance[0],
+                                                                    msg->position_covariance[4],
+                                                                    msg->position_covariance[8]));
+
+    GPSFactor gpsFactor(G(index_), Point3(E,N,U), gps_noise);
+    current_state_guess_->insert(G(index_), Point3(E,N,U));
+    current_incremental_graph_->add(gpsFactor);
+
+    BetweenFactor<Pose3> imu_to_gps_factor(X(index_), G(index_), imu_to_gps_, imu_to_gps_noise_);
+    current_incremental_graph_->add(imu_to_gps_factor);
+  }
+
+  first_fix_ = false;
+}
+
 // Assumes that there is only a single instance of an ID per camera
 void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimation::ArucoDetections> msg) {
   if(!use_aruco_factors_) {
@@ -893,12 +972,12 @@ void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimat
 
   TimingCallback(msg->header.stamp.toSec());
 
-  if (camera_map_.find(msg->camera_name) == camera_map_.end()) {
-    std::cout << "WARNING aruco using invalid camera name " << msg->camera_name << " make sure to register a camera first"
+  if (camera_map_.find(msg->header.frame_id) == camera_map_.end()) {
+    std::cout << "WARNING aruco using invalid camera name " << msg->header.frame_id << " make sure to register a camera first"
               << std::endl;
     return;
   }
-  GtsamCamera camera = camera_map_[msg->camera_name];
+  GtsamCamera camera = camera_map_[msg->header.frame_id];
   int image_index = FindCameraIndex(msg->header.stamp.toSec());
   // if there is some time delay in aruco, check to make sure we have the right image
   if(image_index == -1) {
@@ -912,7 +991,7 @@ void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimat
 
   // list of ids that have been added so there are not duplicates
   for(const autorally_estimation::ArucoDetection& detection : msg->detections) {
-    int id_base = detection.id.data * 10 + 1;
+    int id_base = detection.id * 10 + 1;
 
     // use the first detection to init the location of the aruco marker in world frame
     if(aruco_indexes_.find(id_base) == aruco_indexes_.end()) {
@@ -922,12 +1001,14 @@ void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimat
     }
     if(use_range_for_aruco_) {
       // finds the norm
+      /*
       double dist_aruco = sqrt(pow(detection.pose.position.x, 2) + pow(detection.pose.position.y, 2) + pow(detection.pose.position.z, 2));
       current_incremental_graph_->emplace_shared<RangeFactor<Pose3, Point3>>(
               X(image_index),
               A(id_base - 1),
               dist_aruco,
               aruco_range_noise_);
+      */
     }
 
     for(unsigned int i = 0; i < detection.detections.size(); i++) {

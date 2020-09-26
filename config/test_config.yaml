@@ -31,6 +31,12 @@ factorGraphEstimator:
     # bias noise
     biasNoise: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
+  gpsFactorParams:
+    useGpsFactor: true
+    gpsToImu: [-0.37, 0.0, -0.06]
+    maxGpsError: 5.0
+    useFixedOrigin: false
+
   poseFactorParams:
     usePoseFactor: false
     # rad, rad, rad, m, m, m

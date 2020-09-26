@@ -14,6 +14,8 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/sam/RangeFactor.h>
 #include <gtsam/slam/SmartProjectionPoseFactor.h>
+#include <gtsam/navigation/GPSFactor.h>
+#include <GeographicLib/LocalCartesian.hpp>
 
 #include <utils/FileUtils.hpp>
 
@@ -31,6 +33,7 @@ Authors: Bogdan Vlahov and Jason Gibson
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <geometry_msgs/PoseArray.h>
 #include <sensor_msgs/CameraInfo.h>
+#include <sensor_msgs/NavSatFix.h>
 
 #include <autorally_estimation/ArucoDetections.h>
 #include <autorally_estimation/CameraDetections.h>
@@ -114,6 +117,7 @@ class FactorGraphEstimator {
   virtual void ArucoCallback(const std::shared_ptr<autorally_estimation::ArucoDetections> msg);
   virtual void TimingCallback(const double timestamp);
   virtual void SmartProjectionCallback(const std::shared_ptr<autorally_estimation::CameraDetections> detections);
+  virtual void GpsCallback(const std::shared_ptr<sensor_msgs::NavSatFix> msg);
   virtual OptimizationStats GetOptimizationStats();
 
   virtual std::vector<Landmark> GetLandmarkPositions();
@@ -171,6 +175,16 @@ class FactorGraphEstimator {
   bool getUseSmartProjectionFactor() {return use_smart_pose_projection_factor_;}
   gtsam::SmartProjectionParams getSmartProjectionParams() {return projection_params_;}
   gtsam::noiseModel::Isotropic::shared_ptr getSmartProjectionNoise() {return smart_default_noise_;}
+  // GPS factor getters
+  bool getUseGpsFactor() {return use_gps_factor_;}
+  bool getFirstFix() {return first_fix_;}
+  gtsam::Pose3 getImuToGps() {return imu_to_gps_;}
+  double getMaxGpsError() {return max_gps_error_;}
+  bool getUseFixedOrigin() {return use_fixed_origin_;}
+  gtsam::noiseModel::Diagonal::shared_ptr getImuToGpsNoise() {return imu_to_gps_noise_;}
+  GeographicLib::LocalCartesian getENUObject() {return enu_;}
+
+  void setImuToGpsPose(const gtsam::Pose3& pose) {imu_to_gps_ = pose;}
 
 
   virtual void PropagateImu(gtsam::Pose3& pose, gtsam::Vector3& vel, gtsam::PreintegratedImuMeasurements& preintegrator);
@@ -272,6 +286,16 @@ protected:
   const double GRAVITY = 9.81;
   gtsam::noiseModel::Diagonal::shared_ptr bias_noise_;
   gtsam::imuBias::ConstantBias current_bias_guess_;
+
+  // ================= GPS ==============
+  bool use_gps_factor_ = true;
+  gtsam::Pose3 imu_to_gps_;
+  gtsam::noiseModel::Diagonal::shared_ptr imu_to_gps_noise_;
+  double max_gps_error_ = 1.0;
+  int gps_index_ = 0;
+  bool use_fixed_origin_ = false;
+  bool first_fix_ = true;
+  GeographicLib::LocalCartesian enu_;   /// Object to put lat/lon coordinates into local cartesian
 
   // ========= PRIOR CONFIG =========
   PriorConfig prior_config_;

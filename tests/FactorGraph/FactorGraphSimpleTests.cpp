@@ -182,10 +182,15 @@ void testConstructor(std::string config_file, bool debug, std::string optimizati
   EXPECT_DOUBLE_EQ(smart_noise->sigma(), 60.0);
 
   // TODO GPS factor
-
+  EXPECT_EQ(estimator.getUseGpsFactor(), true);
+  EXPECT_EQ(estimator.getFirstFix(), true);
+  EXPECT_DOUBLE_EQ(estimator.getImuToGps().x(), -0.37);
+  EXPECT_DOUBLE_EQ(estimator.getImuToGps().y(), 0.0);
+  EXPECT_DOUBLE_EQ(estimator.getImuToGps().z(), -0.06);
+  EXPECT_DOUBLE_EQ(estimator.getMaxGpsError(), 5.0);
+  EXPECT_EQ(estimator.getUseFixedOrigin(), false);
 
   // TODO check all noises and what they actually mean
-
   std::shared_ptr<gtsam::NonlinearFactorGraph> current_graph = estimator.getCurrentIncrementalGraph();
   std::shared_ptr<gtsam::Values> current_state = estimator.getCurrentStateGuess();
   int index = estimator.getCurrentIndex();
@@ -470,5 +475,28 @@ TEST(FactorGraphEstimatorLibSimple, GetStateHistory) {
 
 }
 
+TEST(FactorGraphEstimatorLibSimple, gpsCallback) {
+  FactorGraphEstimator estimator(tests::test_config_file);
+  estimator.setImuToGpsPose(gtsam::Pose3());
+
+  std::shared_ptr<sensor_msgs::NavSatFix> msg;
+  msg->header.stamp = ros::Time(100);
+
+  msg->latitude = 88;
+  msg->longitude = 88;
+  msg->altitude = 200;
+
+  estimator.GpsCallback(msg);
+
+  EXPECT_EQ(estimator.getCurrentIndex(), 1);
+  EXPECT_EQ(estimator.getCurrentStateGuess()->size(), 4);
+  EXPECT_EQ(estimator.getCurrentStateGuess()->exists(gtsam::symbol_shorthand::X(1)), true);
+  EXPECT_EQ(estimator.getCurrentStateGuess()->exists(gtsam::symbol_shorthand::G(1)), true);
+  EXPECT_EQ(estimator.getCurrentIncrementalGraph()->size(), 5);
+  GeographicLib::LocalCartesian enu = estimator.getENUObject();
+  EXPECT_DOUBLE_EQ(enu.LatitudeOrigin(), msg->latitude);
+  EXPECT_DOUBLE_EQ(enu.LongitudeOrigin(), msg->longitude);
+  EXPECT_DOUBLE_EQ(enu.HeightOrigin(), msg->altitude);
+}
 
 
