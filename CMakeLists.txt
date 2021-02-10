@@ -10,7 +10,7 @@ include(MacroSubDirList)
 set(CMAKE_INCLUDE_SYSTEM_FLAG_CXX "-I")
 message("WE ARE USING ${CMAKE_INCLUDE_SYSTEM_FLAG_CXX}")
 
-set(BUILD_FLAGS "-std=c++11 -Wuninitialized -Wall")
+set(BUILD_FLAGS "-std=c++14 -Wuninitialized -Wall")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${BUILD_FLAGS}")
 option(BUILD_TESTS "BUILD_TESTS" ON)
 
@@ -101,7 +101,6 @@ catkin_package (
 
 include_directories(SYSTEM ${catkin_INCLUDE_DIRS})
 include_directories(${CATKIN_DEVEL_PREFIX}/include)
-message("What: " ${CATKIN_DEVEL_PREFIX}/include)
 
 add_subdirectory(src)
 

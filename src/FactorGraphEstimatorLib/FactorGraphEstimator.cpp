@@ -765,7 +765,7 @@ bool FactorGraphEstimator::RunOptimize() {
  * calls propagate_imu to update the estimated state given to GTSAM
  * @param imu_data, assumes the accel and angular vel was over the last dt seconds
  */
-void FactorGraphEstimator::CallbackImu(const std::shared_ptr<sensor_msgs::Imu> imu_data) {
+void FactorGraphEstimator::CallbackImu(sensor_msgs::ImuConstPtr imu_data) {
   if (!use_imu_factors_) {
     return;
   }
@@ -913,7 +913,7 @@ void FactorGraphEstimator::AddImuFactor() {
 }
 
 
-void FactorGraphEstimator::GpsCallback(const std::shared_ptr<sensor_msgs::NavSatFix> msg) {
+void FactorGraphEstimator::GpsCallback(sensor_msgs::NavSatFixConstPtr msg) {
   if(!use_gps_factor_) {
     return;
   }
@@ -965,12 +965,12 @@ void FactorGraphEstimator::GpsCallback(const std::shared_ptr<sensor_msgs::NavSat
 }
 
 // Assumes that there is only a single instance of an ID per camera
-void FactorGraphEstimator::ArucoCallback(const std::shared_ptr<autorally_estimation::ArucoDetections> msg) {
+void FactorGraphEstimator::ArucoCallback(autorally_estimation::ArucoDetectionsConstPtr msg) {
   if(!use_aruco_factors_) {
     return;
   }
 
-  TimingCallback(msg->header.stamp.toSec());
+  //TimingCallback(msg->header.stamp.toSec());
 
   if (camera_map_.find(msg->header.frame_id) == camera_map_.end()) {
     std::cout << "WARNING aruco using invalid camera name " << msg->header.frame_id << " make sure to register a camera first"
@@ -1083,7 +1083,7 @@ void FactorGraphEstimator::AddProjectionPrior(std::shared_ptr<Landmark> msg) {
  * Takes in a global estimate of pose, finds the difference and accumulates the delta for the factor
  * @param odom_data
  */
-void FactorGraphEstimator::CallbackOdometry(const std::shared_ptr<nav_msgs::Odometry> odom_data) {
+void FactorGraphEstimator::CallbackOdometry(nav_msgs::OdometryConstPtr odom_data) {
   if (!use_pose_factors_) {
     return;
   }
@@ -1312,13 +1312,13 @@ std::map<std::string, std::vector<geometry_msgs::PoseWithCovarianceStamped>> Fac
   return smart_locations_;
 }
 
-void FactorGraphEstimator::SmartProjectionCallback(const std::shared_ptr<autorally_estimation::CameraDetections> detections) {
+void FactorGraphEstimator::SmartProjectionCallback(autorally_estimation::CameraDetectionsConstPtr detections) {
   // TODO this does not seperate into what camera is being used for each landmark
   if (!use_smart_pose_projection_factor_) {
     return;
   }
 
-  TimingCallback(detections->header.stamp.toSec());
+  //TimingCallback(detections->header.stamp.toSec());
 
   // if there is no position updates this is unconstrained
   if (camera_map_.find(detections->header.frame_id) == camera_map_.end()) {

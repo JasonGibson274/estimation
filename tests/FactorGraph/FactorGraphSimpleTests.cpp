@@ -275,7 +275,7 @@ TEST(FactorGraphEstimatorLibSimple, propagateImu) {
 TEST(FactorGraphEstimatorLibSimple, IMUCallback) {
   FactorGraphEstimator estimator(tests::test_config_file);
 
-  std::shared_ptr<sensor_msgs::Imu> imu_data = std::make_shared<sensor_msgs::Imu>();
+  sensor_msgs::ImuPtr imu_data = boost::make_shared<sensor_msgs::Imu>();
   imu_data->header.stamp = ros::Time(100);
 
   imu_data->linear_acceleration.x = 1.0;
@@ -335,7 +335,7 @@ TEST(FactorGraphEstimatorLibSimple, IMUCallback) {
 TEST(FactorGraphEstimatorLibSimple, AddImuFactorNoPosition) {
   FactorGraphEstimator estimator(tests::test_config_file);
 
-  std::shared_ptr<sensor_msgs::Imu> imu_data = std::make_shared<sensor_msgs::Imu>();
+  sensor_msgs::ImuPtr imu_data = boost::make_shared<sensor_msgs::Imu>();
   imu_data->header.stamp = ros::Time(100);
 
   imu_data->linear_acceleration.x = 1.0;
@@ -359,7 +359,7 @@ TEST(FactorGraphEstimatorLibSimple, AddImuFactorNoPosition) {
 TEST(FactorGraphEstimatorLibSimple, AddImuFactor) {
   FactorGraphEstimator estimator(tests::test_config_file);
 
-  std::shared_ptr<sensor_msgs::Imu> imu_data = std::make_shared<sensor_msgs::Imu>();
+  sensor_msgs::ImuPtr imu_data = boost::make_shared<sensor_msgs::Imu>();
   imu_data->header.stamp = ros::Time(100);
 
   imu_data->linear_acceleration.x = 1.0;
@@ -406,7 +406,7 @@ TEST(FactorGraphEstimatorLibSimple, AddImuFactor) {
 TEST(FactorGraphEstimatorLibSimple, TimingCallback) {
   FactorGraphEstimator estimator(tests::test_config_file);
 
-  std::shared_ptr<sensor_msgs::Imu> imu_data = std::make_shared<sensor_msgs::Imu>();
+  sensor_msgs::ImuPtr imu_data = boost::make_shared<sensor_msgs::Imu>();
   imu_data->header.stamp = ros::Time(100);
 
   imu_data->linear_acceleration.x = 1.0;
@@ -433,7 +433,7 @@ TEST(FactorGraphEstimatorLibSimple, TimingCallback) {
 TEST(FactorGraphEstimatorLibSimple, GetStateHistory) {
   FactorGraphEstimator estimator(tests::test_config_file);
 
-  std::shared_ptr<sensor_msgs::Imu> imu_data = std::make_shared<sensor_msgs::Imu>();
+  sensor_msgs::ImuPtr imu_data = boost::make_shared<sensor_msgs::Imu>();
   imu_data->header.stamp = ros::Time(100);
 
   imu_data->linear_acceleration.x = 1.0;
@@ -479,7 +479,7 @@ TEST(FactorGraphEstimatorLibSimple, gpsCallback) {
   FactorGraphEstimator estimator(tests::test_config_file);
   estimator.setImuToGpsPose(gtsam::Pose3());
 
-  std::shared_ptr<sensor_msgs::NavSatFix> msg;
+  sensor_msgs::NavSatFixPtr msg = boost::make_shared<sensor_msgs::NavSatFix>();
   msg->header.stamp = ros::Time(100);
 
   msg->latitude = 88;
@@ -498,5 +498,6 @@ TEST(FactorGraphEstimatorLibSimple, gpsCallback) {
   EXPECT_DOUBLE_EQ(enu.LongitudeOrigin(), msg->longitude);
   EXPECT_DOUBLE_EQ(enu.HeightOrigin(), msg->altitude);
 }
+
 
 

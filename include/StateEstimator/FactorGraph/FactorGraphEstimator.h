@@ -111,13 +111,15 @@ class FactorGraphEstimator {
  public:
   FactorGraphEstimator(const std::string &config_file);
 
+  FactorGraphEstimator();
+
   // TODO: Figure out what data structure is used for range finders
-  virtual void CallbackOdometry(const std::shared_ptr<nav_msgs::Odometry> odom_data);
-  virtual void CallbackImu(const std::shared_ptr<sensor_msgs::Imu> imu_data);
-  virtual void ArucoCallback(const std::shared_ptr<autorally_estimation::ArucoDetections> msg);
+  virtual void CallbackOdometry(nav_msgs::OdometryConstPtr odom_data);
+  virtual void CallbackImu(sensor_msgs::ImuConstPtr imu_data);
+  virtual void ArucoCallback(autorally_estimation::ArucoDetectionsConstPtr msg);
   virtual void TimingCallback(const double timestamp);
-  virtual void SmartProjectionCallback(const std::shared_ptr<autorally_estimation::CameraDetections> detections);
-  virtual void GpsCallback(const std::shared_ptr<sensor_msgs::NavSatFix> msg);
+  virtual void SmartProjectionCallback(autorally_estimation::CameraDetectionsConstPtr detections);
+  virtual void GpsCallback(sensor_msgs::NavSatFixConstPtr msg);
   virtual OptimizationStats GetOptimizationStats();
 
   virtual std::vector<Landmark> GetLandmarkPositions();

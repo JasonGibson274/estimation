@@ -1,0 +1,22 @@
+<launch>
+  <include file="$(find autorally_core)/launch/hardware.machine" />
+
+  <node
+    pkg = "autorally_estimation"
+    type = "factor_graph_estimator_node"
+    name = "factor_graph_estimator_node"
+    output = "screen">
+
+
+    <param name="config_file" value="$(find autorally_estimation)/config/ccrf.yaml" />
+
+    <!-- topic names -->
+    <param name="gps_topic" value="/gpsRoverStatus"/>
+    <param name="imu_topic" value="/imu/imu"/>
+    <param name="aruco_topic" value="/left_camera/image_raw/aruco_detection"/>
+    <param name="camera_info_topic" value="/left_camera/camera_info"/>
+
+  </node>
+
+</launch>
+

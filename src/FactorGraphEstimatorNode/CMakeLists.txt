@@ -3,7 +3,8 @@ if(NOT GTSAM_FOUND)
   return()
 endif()
 
-#add_executable(FactorGraphEstimatorNode FactorGraphEstimatorNode.cpp)
-#target_link_libraries(FactorGraphEstimatorLib ${catkin_LIBRARIES} ${ROS_LIBRARIES}
-#        gtsam ${GeographicLib_LIBRARY_DIRS}/libGeographic.so ${TBB_LIBRARIES} ${Boost_LIBRARIES})
+add_executable(factor_graph_estimator_node FactorGraphEstimatorNode.cpp)
+target_link_libraries(factor_graph_estimator_node ${ROS_LIBRARIES}
+        ${GTSAM_LIBRARIES} ${YAML_CPP_LIBRARIES} ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${GeographicLib_LIBRARY_DIRS}/libGeographic.so
+        FactorGraphEstimatorLib)
 

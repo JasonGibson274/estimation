@@ -1,0 +1,14 @@
+<launch>
+  <node
+    pkg = "autorally_estimation"
+    type = "aruco_detector"
+    name = "aruco_detector_node"
+    output = "screen">
+
+
+    <param name="image_topic" value="/left_camera/image_raw" />
+
+  </node>
+
+</launch>
+
